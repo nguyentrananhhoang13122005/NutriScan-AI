@@ -1,23 +1,48 @@
 {
   "expo": {
-    "name": "nutriscan-app",
+    "name": "NutriScan AI",
     "slug": "nutriscan-app",
-    "version": "1.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0F172A",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nutriscan.ai",
+      "infoPlist": {
+        "NSCameraUsageDescription": "NutriScan AI cần quyền truy cập Camera để chụp bảng thành phần và quét mã vạch trên bao bì thực phẩm.",
+        "NSPhotoLibraryUsageDescription": "NutriScan AI cần quyền truy cập Thư viện ảnh để bạn chọn ảnh bao bì thực phẩm cần phân tích."
+      }
     },
     "android": {
+      "package": "com.nutriscan.ai",
+      "versionCode": 2,
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép NutriScan AI truy cập Camera để chụp bảng thành phần và quét mã vạch thực phẩm."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phép NutriScan AI truy cập Thư viện ảnh để phân tích ảnh chụp bao bì thực phẩm."
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     }

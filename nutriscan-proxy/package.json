@@ -1,0 +1,10 @@
+{
+  "name": "nutriscan-proxy",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Secure Serverless API Proxy for NutriScan AI APK builds (hides OpenAI & Gemini API Keys from client bundle)",
+  "main": "api/analyze.js",
+  "engines": {
+    "node": ">=18.x"
+  }
+}

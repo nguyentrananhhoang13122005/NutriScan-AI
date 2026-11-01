@@ -82,3 +82,4 @@ jobs:
           name: nutriscan-web-bundle
           path: nutriscan-app/dist
           retention-days: 7
+
