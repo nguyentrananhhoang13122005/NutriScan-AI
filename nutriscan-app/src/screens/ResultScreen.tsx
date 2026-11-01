@@ -6,9 +6,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
+  Image,
 } from 'react-native';
 import { useAppStore } from '../store/useAppStore';
-import { THEME } from '../constants/theme';
 import { TrafficLightBadge } from '../components/TrafficLightBadge';
 import { NovaBadge } from '../components/NovaBadge';
 import { AdditiveItem } from '../components/AdditiveItem';
@@ -22,7 +22,8 @@ import {
   Flame,
   Candy,
   ShieldCheck,
-  RotateCcw,
+  ShieldAlert,
+  Barcode,
 } from 'lucide-react-native';
 
 export const ResultScreen: React.FC = () => {
@@ -30,6 +31,33 @@ export const ResultScreen: React.FC = () => {
   const [shareModalVisible, setShareModalVisible] = useState(false);
 
   if (!currentScan) return null;
+
+  // Kiểm tra dị ứng trùng khớp với hồ sơ đang chọn
+  const matchedAllergens = (currentScan.allergens_detected || []).filter((detected) =>
+    (activeProfile?.allergies || []).some((userAllergy) => {
+      const cleanUser = userAllergy.split('(')[0].trim().toLowerCase();
+      return (
+        detected.toLowerCase().includes(cleanUser) ||
+        userAllergy.toLowerCase().includes(detected.toLowerCase())
+      );
+    })
+  );
+
+  // Tiêu đề hộp đánh giá theo đúng đối tượng trong Hồ sơ
+  const targetGroup = activeProfile?.target_group || 'CHILD';
+  const dangerTitle =
+    targetGroup === 'CHILD'
+      ? `CẢNH BÁO CHO TRẺ EM (${activeProfile?.child_age_years || 2} TUỔI)`
+      : targetGroup === 'PREGNANT'
+      ? 'LƯU Ý CHO MẸ BẦU & CHO CON BÚ'
+      : 'CẢNH BÁO SỨC KHỎE & PHỤ GIA';
+
+  const safeTitle =
+    targetGroup === 'CHILD'
+      ? 'AN TOÀN CHO TRẺ EM'
+      : targetGroup === 'PREGNANT'
+      ? 'AN TOÀN CHO MẸ BẦU & THAI KỲ'
+      : 'ĐẠT CHUẨN AN TOÀN DINH DƯỠNG';
 
   return (
     <View style={styles.container}>
@@ -50,16 +78,52 @@ export const ResultScreen: React.FC = () => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Product Identity */}
+        {/* Product Identity & Captured Image */}
         <View style={styles.productHeader}>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryText}>{currentScan.category}</Text>
+          {currentScan.image_uri ? (
+            <Image
+              source={{ uri: currentScan.image_uri }}
+              style={styles.productThumb}
+              resizeMode="cover"
+            />
+          ) : null}
+
+          <View style={styles.badgeRow}>
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryText}>{currentScan.category}</Text>
+            </View>
+            {currentScan.barcode ? (
+              <View style={styles.barcodeBadge}>
+                <Barcode size={12} color="#34D399" />
+                <Text style={styles.barcodeText}>{currentScan.barcode}</Text>
+              </View>
+            ) : null}
           </View>
+
           <Text style={styles.productTitle}>{currentScan.product_name}</Text>
-          {currentScan.brand_name && (
+          {currentScan.brand_name ? (
             <Text style={styles.brandTitle}>Thương hiệu: {currentScan.brand_name}</Text>
-          )}
+          ) : null}
         </View>
+
+        {/* 🚨 CẢNH BÁO DỊ ỨNG CÁ NHÂN KHẨN CẤP (NẾU TRÙNG HỒ SƠ) */}
+        {matchedAllergens.length > 0 && (
+          <View style={styles.allergyEmergencyBox}>
+            <View style={styles.alertHeader}>
+              <ShieldAlert size={20} color="#FFFFFF" />
+              <Text style={styles.allergyEmergencyTitle}>
+                CẢNH BÁO DỊ ỨNG CHO {activeProfile?.name.toUpperCase()}!
+              </Text>
+            </View>
+            <Text style={styles.allergyEmergencyBody}>
+              Phát hiện sản phẩm có chứa thành phần gây dị ứng trong hồ sơ của bạn:{' '}
+              <Text style={{ fontWeight: '800', textDecorationLine: 'underline' }}>
+                {matchedAllergens.join(', ')}
+              </Text>
+              . Tuyệt đối kiểm tra kỹ trước khi sử dụng!
+            </Text>
+          </View>
+        )}
 
         {/* Score & Badges Card */}
         <View style={styles.scoreCard}>
@@ -76,26 +140,28 @@ export const ResultScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Child & Personal Alert Card */}
+        {/* Child & Personal Safety Card */}
         {!currentScan.child_warning.is_safe_for_kids ? (
           <View style={styles.dangerAlertBox}>
             <View style={styles.alertHeader}>
               <AlertTriangle size={18} color="#EF4444" />
-              <Text style={styles.alertHeaderTitle}>CẢNH BÁO CHO TRẺ EM</Text>
+              <Text style={styles.alertHeaderTitle}>{dangerTitle}</Text>
             </View>
             <Text style={styles.alertBodyText}>
               {currentScan.child_warning.danger_reason}
             </Text>
-            <Text style={styles.ageAdvice}>
-              Khuyến nghị độ tuổi tối thiểu: Từ {currentScan.child_warning.min_recommended_age_years} tuổi trở lên
-            </Text>
+            {targetGroup === 'CHILD' && (
+              <Text style={styles.ageAdvice}>
+                Khuyến nghị độ tuổi tối thiểu: Từ {currentScan.child_warning.min_recommended_age_years} tuổi trở lên
+              </Text>
+            )}
           </View>
         ) : (
           <View style={styles.safeAlertBox}>
             <View style={styles.alertHeader}>
               <CheckCircle2 size={18} color="#22C55E" />
               <Text style={[styles.alertHeaderTitle, { color: '#22C55E' }]}>
-                AN TOÀN CHO TRẺ EM
+                {safeTitle}
               </Text>
             </View>
             <Text style={[styles.alertBodyText, { color: '#DCFCE7' }]}>
@@ -142,7 +208,7 @@ export const ResultScreen: React.FC = () => {
               <View style={styles.warningRow}>
                 <ShieldCheck size={16} color="#38BDF8" />
                 <View style={styles.warningContent}>
-                  <Text style={styles.warningLabel}>Chất gây dị ứng:</Text>
+                  <Text style={styles.warningLabel}>Chất gây dị ứng trên nhãn:</Text>
                   <Text style={styles.warningTags}>
                     {currentScan.allergens_detected.join(', ')}
                   </Text>
@@ -252,15 +318,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  productThumb: {
+    width: 84,
+    height: 84,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#334155',
+    marginBottom: 10,
+    backgroundColor: '#1E293B',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
   categoryBadge: {
     backgroundColor: '#334155',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    marginBottom: 6,
   },
   categoryText: {
     color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  barcodeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+  },
+  barcodeText: {
+    color: '#34D399',
     fontSize: 11,
     fontWeight: '700',
   },
@@ -273,6 +369,26 @@ const styles = StyleSheet.create({
   brandTitle: {
     color: '#94A3B8',
     fontSize: 13,
+    marginTop: 4,
+  },
+  allergyEmergencyBox: {
+    backgroundColor: '#DC2626',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#FCA5A5',
+  },
+  allergyEmergencyTitle: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 13,
+    flex: 1,
+  },
+  allergyEmergencyBody: {
+    color: '#FEF2F2',
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 4,
   },
   scoreCard: {

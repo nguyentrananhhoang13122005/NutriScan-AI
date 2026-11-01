@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, Alert, Share } from 'react-native';
 import { NutritionResult, UserProfile } from '../types/nutrition';
 import { THEME } from '../constants/theme';
 import { TrafficLightBadge } from './TrafficLightBadge';
@@ -15,12 +15,31 @@ interface Props {
 export const ShareCardModal: React.FC<Props> = ({ visible, onClose, scan, profile }) => {
   if (!scan) return null;
 
-  const handleShare = () => {
-    Alert.alert(
-      'Chia sẻ thành công!',
-      'Ảnh thẻ phân tích đã được lưu vào bộ nhớ đệm để bạn gửi qua Zalo / Facebook / Tin nhắn.'
-    );
-    onClose();
+  const handleShare = async () => {
+    try {
+      const statusEmoji =
+        scan.traffic_light === 'GREEN' ? '🟢 AN TOÀN' : scan.traffic_light === 'YELLOW' ? '🟡 CẦN LƯU Ý' : '🔴 HẠN CHẾ DÙNG';
+      const additivesList =
+        scan.additives.length > 0
+          ? scan.additives.map((a) => `${a.code} (${a.name})`).join(', ')
+          : 'Không phát hiện phụ gia tổng hợp';
+
+      const message = [
+        `🥑 KẾT QUẢ SOI NHÃN NUTRISCAN AI`,
+        `📦 Sản phẩm: ${scan.product_name}${scan.brand_name ? ` (${scan.brand_name})` : ''}`,
+        `📊 Điểm sức khỏe: ${scan.health_score}/100 — ${statusEmoji} (NOVA ${scan.nova_group})`,
+        `👶 Đánh giá: ${scan.child_warning.danger_reason}`,
+        `🧪 Phụ gia (${scan.additives.length}): ${additivesList}`,
+        `💡 Khuyến nghị: ${scan.actionable_advice}`,
+      ].join('\n');
+
+      await Share.share({
+        title: `Đánh giá dinh dưỡng: ${scan.product_name}`,
+        message,
+      });
+    } catch (e) {
+      Alert.alert('Thông báo', 'Không thể mở bảng chia sẻ trên thiết bị này.');
+    }
   };
 
   return (

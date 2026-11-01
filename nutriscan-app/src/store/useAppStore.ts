@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Alert } from 'react-native';
 import { NutritionResult, UserProfile } from '../types/nutrition';
 import { DEFAULT_PROFILES } from '../constants/mockData';
 import { storageService } from '../services/storageService';
@@ -13,6 +14,7 @@ interface AppState {
   analyzingImageUri: string | null;
   activeTab: 'scan' | 'history' | 'profile';
   shareModalVisible: boolean;
+  compareItems: NutritionResult[];
 
   // Actions
   loadInitialData: () => Promise<void>;
@@ -20,12 +22,15 @@ interface AppState {
   updateProfile: (updated: UserProfile) => Promise<void>;
   resetProfilesToDefault: () => Promise<void>;
   startAnalyze: (imageUri: string) => Promise<void>;
+  startBarcodeScan: (barcode: string) => Promise<'FOUND' | 'NOT_FOUND' | 'ERROR'>;
   viewScanDetail: (scan: NutritionResult) => void;
   clearCurrentScan: () => void;
   deleteHistoryItem: (id: string) => Promise<void>;
   clearAllHistory: () => Promise<void>;
   setActiveTab: (tab: 'scan' | 'history' | 'profile') => void;
   setShareModalVisible: (visible: boolean) => void;
+  toggleCompareItem: (scan: NutritionResult) => void;
+  clearCompareItems: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -37,6 +42,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   analyzingImageUri: null,
   activeTab: 'scan',
   shareModalVisible: false,
+  compareItems: [],
 
   loadInitialData: async () => {
     const [profiles, activeId, history] = await Promise.all([
@@ -93,9 +99,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const result = await aiService.analyzeLabel(imageUri, activeProfile);
+
+      // Kiểm tra nếu ảnh không phải bao bì/nhãn thực phẩm hợp lệ
+      if (result.is_valid_food_label === false) {
+        set({
+          isAnalyzing: false,
+          analyzingImageUri: null,
+        });
+        Alert.alert(
+          'Chưa nhận diện được Bảng Thành Phần',
+          result.summary ||
+            'Bức ảnh không rõ chữ hoặc không phải bao bì thực phẩm. Bạn hãy đưa camera lại gần bảng thành phần và chụp rõ nét hơn nhé!'
+        );
+        return;
+      }
+
       await storageService.saveScanToHistory(result);
-      
       const updatedHistory = await storageService.getScanHistory();
+
       set({
         isAnalyzing: false,
         analyzingImageUri: null,
@@ -111,6 +132,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  startBarcodeScan: async (barcode: string) => {
+    const { activeProfile } = get();
+    if (!activeProfile) return 'ERROR';
+
+    set({
+      isAnalyzing: true,
+      analyzingImageUri: null,
+    });
+
+    try {
+      const result = await aiService.analyzeByBarcode(barcode, activeProfile);
+      if (!result) {
+        set({
+          isAnalyzing: false,
+          analyzingImageUri: null,
+        });
+        return 'NOT_FOUND';
+      }
+
+      await storageService.saveScanToHistory(result);
+      const updatedHistory = await storageService.getScanHistory();
+
+      set({
+        isAnalyzing: false,
+        analyzingImageUri: null,
+        currentScan: result,
+        history: updatedHistory,
+      });
+      return 'FOUND';
+    } catch (error) {
+      console.error('Lỗi quét mã vạch:', error);
+      set({
+        isAnalyzing: false,
+        analyzingImageUri: null,
+      });
+      return 'ERROR';
+    }
+  },
+
   viewScanDetail: (scan: NutritionResult) => {
     set({ currentScan: scan });
   },
@@ -120,14 +180,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteHistoryItem: async (id: string) => {
+    const { compareItems } = get();
     await storageService.deleteScanFromHistory(id);
     const updated = await storageService.getScanHistory();
-    set({ history: updated });
+    set({
+      history: updated,
+      compareItems: compareItems.filter((item) => item.id !== id),
+    });
   },
 
   clearAllHistory: async () => {
     await storageService.clearAllHistory();
-    set({ history: [] });
+    set({ history: [], compareItems: [] });
   },
 
   setActiveTab: (tab: 'scan' | 'history' | 'profile') => {
@@ -136,5 +200,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setShareModalVisible: (visible: boolean) => {
     set({ shareModalVisible: visible });
+  },
+
+  toggleCompareItem: (scan: NutritionResult) => {
+    const { compareItems } = get();
+    const exists = compareItems.some((item) => item.id === scan.id);
+    if (exists) {
+      set({ compareItems: compareItems.filter((item) => item.id !== scan.id) });
+    } else {
+      if (compareItems.length >= 2) {
+        // Thay thế sản phẩm thứ 2 bằng sản phẩm mới chọn
+        set({ compareItems: [compareItems[0], scan] });
+      } else {
+        set({ compareItems: [...compareItems, scan] });
+      }
+    }
+  },
+
+  clearCompareItems: () => {
+    set({ compareItems: [] });
   },
 }));

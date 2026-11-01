@@ -117,6 +117,16 @@ export const storageService = {
     }
   },
 
+  async findScanByBarcode(barcode: string): Promise<NutritionResult | null> {
+    try {
+      const current = await this.getScanHistory();
+      const found = current.find((item) => item.barcode === barcode);
+      return found || null;
+    } catch {
+      return null;
+    }
+  },
+
   async getApiKey(provider: 'GEMINI' | 'OPENAI'): Promise<string> {
     try {
       const key = provider === 'GEMINI' ? KEYS.API_KEY_GEMINI : KEYS.API_KEY_OPENAI;
