@@ -402,8 +402,8 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
     }
     const manipulated = await ImageManipulator.manipulateAsync(
       imageUri,
-      [{ resize: { width: 1200 } }],
-      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      [{ resize: { width: 1024 } }],
+      { compress: 0.65, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
     return manipulated.base64 || '';
   }

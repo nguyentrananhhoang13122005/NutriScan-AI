@@ -6,7 +6,7 @@
  * 1. Giấu kín OPENAI_API_KEY / GEMINI_API_KEY trên Server (Vercel / Cloud).
  *    File .apk trên điện thoại người dùng hoàn toàn KHÔNG chứa khóa sk-proj-...
  * 2. Giới hạn tần suất quét (Rate Limit: tối đa 25 lượt / 10 phút / IP) chống spam đốt tiền.
- * 3. Hỗ trợ cả triển khai Serverless trên Vercel lẫn chạy trực tiếp bằng Node.js.
+ * 3. Hỗ trợ GET health-check để kiểm tra nhanh trên trình duyệt sau khi Deploy.
  */
 
 const rateLimitMap = new Map();
@@ -30,11 +30,27 @@ function checkRateLimit(ip) {
 async function handler(req, res) {
   // Cấu hình CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-NutriScan-Client');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  const provider = (process.env.AI_PROVIDER || 'OPENAI').trim().toUpperCase();
+  const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+  const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+
+  // Mở trên trình duyệt để kiểm tra trạng thái hoạt động (Health Check)
+  if (req.method === 'GET') {
+    return res.status(200).json({
+      status: 'ok',
+      service: 'NutriScan AI Secure Proxy v2.1',
+      activeProvider: provider,
+      openaiKeyConfigured: Boolean(openaiKey && openaiKey.startsWith('sk-')),
+      geminiKeyConfigured: Boolean(geminiKey),
+      endpoint: '/api/analyze',
+    });
   }
 
   if (req.method !== 'POST') {
@@ -64,10 +80,6 @@ async function handler(req, res) {
     if (!promptText) {
       return res.status(400).json({ error: 'Thiếu dữ liệu promptText' });
     }
-
-    const provider = (process.env.AI_PROVIDER || 'OPENAI').trim().toUpperCase();
-    const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
-    const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
 
     // 1. Ưu tiên gọi OpenAI GPT-4o-mini
     if (provider === 'OPENAI' && openaiKey) {
