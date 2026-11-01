@@ -66,6 +66,217 @@ class AIService {
     return this.config;
   }
 
+  private getTargetDescription(profile: UserProfile): string {
+    if (profile.target_group === 'CHILD') {
+      return `Trẻ em (${profile.child_age_years || 2} tuổi)`;
+    }
+    if (profile.target_group === 'PREGNANT') {
+      return 'Mẹ bầu & Cho con bú (Cần tránh phụ gia chống chỉ định thai kỳ, phẩm màu nhân tạo, chất kích thích/cafein)';
+    }
+    return 'Người lớn';
+  }
+
+  /**
+   * Tra cứu sản phẩm theo Mã vạch (Hybrid Barcode Scanner)
+   * 1. Kiểm tra bộ nhớ đệm lịch sử trên máy (trả kết quả 0.1s)
+   * 2. Tra cứu CSDL quốc tế OpenFoodFacts + Phân tích AI tiếng Việt
+   */
+  public async analyzeByBarcode(
+    barcode: string,
+    profile: UserProfile
+  ): Promise<NutritionResult | null> {
+    const cleanCode = barcode.trim();
+
+    // Bước 1: Kiểm tra bộ nhớ đệm trên thiết bị
+    const cached = await storageService.findScanByBarcode(cleanCode);
+    if (cached) {
+      return {
+        ...cached,
+        timestamp: Date.now(),
+      };
+    }
+
+    // Bước 2: Tra cứu trên OpenFoodFacts API
+    try {
+      const offRes = await fetch(
+        `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(cleanCode)}.json`
+      );
+      if (!offRes.ok) return null;
+
+      const offData = await offRes.json();
+      if (offData.status !== 1 || !offData.product) {
+        return null; // Mã vạch chưa có trong CSDL quốc tế -> báo chụp bảng thành phần
+      }
+
+      const p = offData.product;
+      const productName =
+        p.product_name_vi || p.product_name || p.generic_name || `Sản phẩm (${cleanCode})`;
+      const brandName = p.brands || '';
+      const ingredientsText =
+        p.ingredients_text_vi || p.ingredients_text || p.ingredients_text_en || '';
+      const additivesTags: string[] = Array.isArray(p.additives_tags)
+        ? p.additives_tags.map((t: string) => t.replace('en:', '').toUpperCase())
+        : [];
+      const allergensTags: string[] = Array.isArray(p.allergens_tags)
+        ? p.allergens_tags.map((t: string) => t.replace('en:', ''))
+        : [];
+      const novaGroup = (p.nova_group >= 1 && p.nova_group <= 4 ? p.nova_group : 3) as 1 | 2 | 3 | 4;
+      const imageUri = p.image_front_small_url || p.image_url || undefined;
+
+      // Nếu có OpenAI Key, dùng AI phân tích sâu dữ liệu thực phẩm từ mã vạch sang chuẩn tiếng Việt
+      if (this.config.provider === 'OPENAI' && this.config.openaiKey) {
+        try {
+          const promptText = `
+Bạn là Hội đồng Chuyên gia An toàn Thực phẩm & Dinh dưỡng Nhi khoa (tiêu chuẩn FAO/WHO Codex và Bộ Y tế Việt Nam).
+Người dùng vừa quét mã vạch: ${cleanCode}
+Thông tin trích xuất từ cơ sở dữ liệu:
+- Tên sản phẩm: ${productName}
+- Thương hiệu: ${brandName}
+- Bảng thành phần: ${ingredientsText || 'Chưa rõ chi tiết, hãy suy luận dựa trên tên sản phẩm và danh sách phụ gia'}
+- Mã phụ gia phát hiện: ${additivesTags.join(', ') || 'Không có'}
+- Chất dị ứng: ${allergensTags.join(', ') || 'Không có'}
+- Phân nhóm NOVA: ${novaGroup}
+
+HỒ SƠ NGƯỜI DÙNG:
+- Đối tượng: ${this.getTargetDescription(profile)}
+- Cảnh báo Dị ứng: ${profile.allergies.join(', ') || 'Không có'}
+- Mối quan tâm đặc biệt: ${profile.special_concerns.join(', ') || 'Không có'}
+- Chế độ bảo vệ nghiêm ngặt: ${profile.strict_child_mode ? 'BẬT' : 'TẮT'}
+
+HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC TRƯỜNG:
+{
+  "is_valid_food_label": true,
+  "product_name": "Tên sản phẩm bằng tiếng Việt rõ ràng",
+  "brand_name": "Tên thương hiệu",
+  "category": "Bánh kẹo | Đồ uống | Mì ăn liền | Sữa & Chế phẩm sữa | Đồ ăn dặm | Gia vị | Snack/Bim bim | Khác",
+  "health_score": (số nguyên 0 đến 100),
+  "traffic_light": "GREEN" hoặc "YELLOW" hoặc "RED",
+  "nova_group": (1, 2, 3, hoặc 4),
+  "summary": "Tóm tắt ngắn gọn 1-2 câu",
+  "child_warning": {
+    "is_safe_for_kids": (true/false),
+    "min_recommended_age_years": (số tuổi),
+    "danger_reason": "Đánh giá cụ thể đối với đối tượng đang quét"
+  },
+  "hidden_sugars_detected": [],
+  "bad_fats_detected": [],
+  "allergens_detected": [],
+  "additives": [
+    {
+      "code": "Mã E/INS",
+      "name": "Tên phụ gia tiếng Việt",
+      "group": "Chất bảo quản | Phẩm màu | Chất điều vị | Chất tạo ngọt | Chất nhũ hóa | Khác",
+      "risk_level": "NO_RISK" | "LOW_RISK" | "MODERATE_RISK" | "HAZARDOUS",
+      "short_explanation": "Giải thích 1 câu ngắn dễ hiểu"
+    }
+  ],
+  "healthy_alternatives": [
+    {
+      "suggestion_name": "Tên món thay thế sạch hơn",
+      "why_better": "Lý do tốt hơn"
+    }
+  ],
+  "actionable_advice": "Lời khuyên khẩu phần thiết thực"
+}`;
+
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.config.openaiKey}`,
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              response_format: { type: 'json_object' },
+              messages: [{ role: 'user', content: promptText }],
+              temperature: 0.1,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const content = data?.choices?.[0]?.message?.content;
+            if (content) {
+              const parsed = JSON.parse(content);
+              return {
+                id: `barcode_${cleanCode}_${Date.now()}`,
+                timestamp: Date.now(),
+                barcode: cleanCode,
+                image_uri: imageUri,
+                is_valid_food_label: true,
+                product_name: parsed.product_name || productName,
+                brand_name: parsed.brand_name || brandName,
+                category: parsed.category || 'Khác',
+                health_score: typeof parsed.health_score === 'number' ? parsed.health_score : 60,
+                traffic_light: parsed.traffic_light || 'YELLOW',
+                nova_group: parsed.nova_group || novaGroup,
+                summary: parsed.summary || 'Đã tra cứu và phân tích thành phần qua mã vạch.',
+                child_warning: parsed.child_warning || {
+                  is_safe_for_kids: true,
+                  min_recommended_age_years: 1,
+                  danger_reason: 'Phù hợp sử dụng điều độ.',
+                },
+                hidden_sugars_detected: parsed.hidden_sugars_detected || [],
+                bad_fats_detected: parsed.bad_fats_detected || [],
+                allergens_detected: parsed.allergens_detected || allergensTags,
+                additives: parsed.additives || [],
+                healthy_alternatives: parsed.healthy_alternatives || [],
+                actionable_advice:
+                  parsed.actionable_advice || 'Sử dụng điều độ theo nhu cầu dinh dưỡng hằng ngày.',
+              };
+            }
+          }
+        } catch (aiErr) {
+          console.warn('Lỗi gọi AI cho barcode, dùng dữ liệu OpenFoodFacts trực tiếp:', aiErr);
+        }
+      }
+
+      // Fallback trực tiếp từ dữ liệu OpenFoodFacts nếu không gọi AI
+      const baseScore = novaGroup === 1 ? 88 : novaGroup === 2 ? 75 : novaGroup === 3 ? 62 : 38;
+      const trafficLight = baseScore >= 75 ? 'GREEN' : baseScore >= 50 ? 'YELLOW' : 'RED';
+
+      return {
+        id: `barcode_${cleanCode}_${Date.now()}`,
+        timestamp: Date.now(),
+        barcode: cleanCode,
+        image_uri: imageUri,
+        is_valid_food_label: true,
+        product_name: productName,
+        brand_name: brandName,
+        category: 'Thực phẩm đóng gói',
+        health_score: baseScore,
+        traffic_light: trafficLight,
+        nova_group: novaGroup,
+        summary: ingredientsText
+          ? `Thành phần: ${ingredientsText.slice(0, 140)}...`
+          : `Sản phẩm thuộc nhóm chế biến NOVA ${novaGroup}.`,
+        child_warning: {
+          is_safe_for_kids: novaGroup < 4 && additivesTags.length <= 2,
+          min_recommended_age_years: novaGroup === 4 ? 3 : 1,
+          danger_reason:
+            novaGroup === 4
+              ? 'Thực phẩm siêu chế biến (NOVA 4), cần hạn chế cho trẻ nhỏ.'
+              : 'Có thể sử dụng với lượng hợp lý.',
+        },
+        hidden_sugars_detected: [],
+        bad_fats_detected: [],
+        allergens_detected: allergensTags,
+        additives: additivesTags.map((code) => ({
+          code,
+          name: `Phụ gia ${code}`,
+          group: 'Khác',
+          risk_level: 'LOW_RISK',
+          short_explanation: 'Được ghi nhận trên hệ thống mã vạch OpenFoodFacts.',
+        })),
+        healthy_alternatives: [],
+        actionable_advice: 'Kết hợp chế độ ăn đa dạng thực phẩm tươi tự nhiên.',
+      };
+    } catch (e) {
+      console.warn('Lỗi tra cứu mã vạch:', e);
+      return null;
+    }
+  }
+
   /**
    * Phân tích hình ảnh bảng thành phần dựa trên cấu hình AI đã chọn
    */
@@ -89,6 +300,7 @@ class AIService {
         id: `scan_${Date.now()}`,
         timestamp: Date.now(),
         image_uri: imageUri,
+        is_valid_food_label: true,
       };
 
       const matchedAllergens = personalizedResult.allergens_detected.filter((a) =>
@@ -125,7 +337,6 @@ class AIService {
    */
   private async callGeminiAPI(imageUri: string, profile: UserProfile): Promise<NutritionResult> {
     try {
-      // 1. Nén ảnh và chuyển thành Base64
       let base64Data = '';
       if (imageUri.startsWith('data:image')) {
         base64Data = imageUri.split(',')[1];
@@ -138,26 +349,23 @@ class AIService {
         base64Data = manipulated.base64 || '';
       }
 
-      // 2. Xây dựng prompt chuyên môn có hồ sơ người dùng
-      const targetDesc =
-        profile.target_group === 'CHILD'
-          ? `Trẻ em (${profile.child_age_years || 2} tuổi)`
-          : profile.target_group === 'PREGNANT'
-          ? 'Mẹ bầu & Cho con bú (Cần tránh phụ gia chống chỉ định thai kỳ, phẩm màu nhân tạo, chất kích thích)'
-          : 'Người lớn';
+      const targetDesc = this.getTargetDescription(profile);
 
       const promptText = `
 Bạn là Hội đồng Chuyên gia An toàn Thực phẩm & Dinh dưỡng Nhi khoa (tiêu chuẩn FAO/WHO Codex và Bộ Y tế Việt Nam).
-Hãy phân tích hình ảnh bảng thành phần thực phẩm được cung cấp.
+Hãy phân tích hình ảnh bảng thành phần hoặc bao bì thực phẩm được cung cấp.
+
+QUAN TRỌNG: Nếu bức ảnh hoàn toàn KHÔNG PHẢI là thực phẩm, đồ uống, bao bì sản phẩm hoặc quá mờ không thể nhận diện bất kỳ thông tin thực phẩm nào (ví dụ: chụp mặt bàn, sàn nhà, con người, màn hình trống...), hãy trả về "is_valid_food_label": false kèm lý do trong "summary". Ngược lại trả về "is_valid_food_label": true.
 
 HỒ SƠ NGƯỜI DÙNG:
 - Đối tượng: ${targetDesc}
 - Cảnh báo Dị ứng: ${profile.allergies.join(', ') || 'Không có'}
 - Mối quan tâm đặc biệt: ${profile.special_concerns.join(', ') || 'Không có'}
-- Chế độ bảo vệ trẻ em nghiêm ngặt: ${profile.strict_child_mode ? 'BẬT (Khắt khe với phẩm màu E102, E110, chất bảo quản)' : 'TẮT'}
+- Chế độ bảo vệ nghiêm ngặt: ${profile.strict_child_mode ? 'BẬT (Khắt khe với phẩm màu E102, E110, chất bảo quản)' : 'TẮT'}
 
 HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC TRƯỜNG:
 {
+  "is_valid_food_label": (true hoặc false),
   "product_name": "Tên sản phẩm",
   "brand_name": "Tên thương hiệu nếu có",
   "category": "Bánh kẹo | Đồ uống | Mì ăn liền | Sữa & Chế phẩm sữa | Đồ ăn dặm | Gia vị | Snack/Bim bim | Khác",
@@ -168,7 +376,7 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
   "child_warning": {
     "is_safe_for_kids": (true/false),
     "min_recommended_age_years": (số tuổi),
-    "danger_reason": "Lý do cụ thể nếu nguy hại cho bé"
+    "danger_reason": "Lý do cụ thể nếu nguy hại hoặc lời khuyên cho đối tượng đang quét"
   },
   "hidden_sugars_detected": ["Đường ẩn phát hiện được như Maltodextrin, Siro bắp HFCS..."],
   "bad_fats_detected": ["Dầu cọ, Trans-fat nếu có..."],
@@ -235,6 +443,7 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
         id: `gemini_${Date.now()}`,
         timestamp: Date.now(),
         image_uri: imageUri,
+        is_valid_food_label: parsed.is_valid_food_label !== false,
         product_name: parsed.product_name || 'Sản phẩm chưa rõ tên',
         brand_name: parsed.brand_name || '',
         category: parsed.category || 'Khác',
@@ -261,7 +470,8 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
         id: `scan_error_${Date.now()}`,
         timestamp: Date.now(),
         image_uri: imageUri,
-        summary: `[Chế độ dự phòng] Không thể kết nối Gemini API (${err.message || 'Lỗi mạng/Key'}). Vui lòng kiểm tra lại API Key trong cài đặt.`,
+        is_valid_food_label: true,
+        summary: `[Chế độ dự phòng] Không thể kết nối Gemini API (${err.message || 'Lỗi mạng/Key'}). Vui lòng kiểm tra lại kết nối mạng.`,
       };
     }
   }
@@ -283,25 +493,23 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
         base64Data = manipulated.base64 || '';
       }
 
-      const targetDesc =
-        profile.target_group === 'CHILD'
-          ? `Trẻ em (${profile.child_age_years || 2} tuổi)`
-          : profile.target_group === 'PREGNANT'
-          ? 'Mẹ bầu & Cho con bú (Cần tránh phụ gia chống chỉ định thai kỳ, phẩm màu nhân tạo, chất kích thích)'
-          : 'Người lớn';
+      const targetDesc = this.getTargetDescription(profile);
 
       const promptText = `
 Bạn là Hội đồng Chuyên gia An toàn Thực phẩm & Dinh dưỡng Nhi khoa (tiêu chuẩn FAO/WHO Codex và Bộ Y tế Việt Nam).
-Hãy phân tích hình ảnh bảng thành phần thực phẩm được cung cấp.
+Hãy phân tích hình ảnh bảng thành phần hoặc bao bì thực phẩm được cung cấp.
+
+QUAN TRỌNG: Nếu bức ảnh hoàn toàn KHÔNG PHẢI là thực phẩm, đồ uống, bao bì sản phẩm hoặc quá mờ không thể nhận diện bất kỳ thông tin thực phẩm nào (ví dụ: chụp mặt bàn, sàn nhà, con người, màn hình trống...), hãy trả về "is_valid_food_label": false kèm lý do trong "summary". Ngược lại trả về "is_valid_food_label": true.
 
 HỒ SƠ NGƯỜI DÙNG:
 - Đối tượng: ${targetDesc}
 - Cảnh báo Dị ứng: ${profile.allergies.join(', ') || 'Không có'}
 - Mối quan tâm đặc biệt: ${profile.special_concerns.join(', ') || 'Không có'}
-- Chế độ bảo vệ trẻ em nghiêm ngặt: ${profile.strict_child_mode ? 'BẬT (Khắt khe với phẩm màu E102, E110, chất bảo quản)' : 'TẮT'}
+- Chế độ bảo vệ nghiêm ngặt: ${profile.strict_child_mode ? 'BẬT (Khắt khe với phẩm màu E102, E110, chất bảo quản)' : 'TẮT'}
 
 HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC TRƯỜNG:
 {
+  "is_valid_food_label": (true hoặc false),
   "product_name": "Tên sản phẩm",
   "brand_name": "Tên thương hiệu nếu có",
   "category": "Bánh kẹo | Đồ uống | Mì ăn liền | Sữa & Chế phẩm sữa | Đồ ăn dặm | Gia vị | Snack/Bim bim | Khác",
@@ -312,7 +520,7 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
   "child_warning": {
     "is_safe_for_kids": (true/false),
     "min_recommended_age_years": (số tuổi),
-    "danger_reason": "Lý do cụ thể nếu nguy hại cho bé"
+    "danger_reason": "Lý do cụ thể nếu nguy hại hoặc lời khuyên cho đối tượng đang quét"
   },
   "hidden_sugars_detected": ["Đường ẩn phát hiện được như Maltodextrin, Siro bắp HFCS..."],
   "bad_fats_detected": ["Dầu cọ, Trans-fat nếu có..."],
@@ -376,6 +584,7 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
         id: `openai_${Date.now()}`,
         timestamp: Date.now(),
         image_uri: imageUri,
+        is_valid_food_label: parsed.is_valid_food_label !== false,
         product_name: parsed.product_name || 'Sản phẩm',
         brand_name: parsed.brand_name || '',
         category: parsed.category || 'Khác',
@@ -402,7 +611,8 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
         id: `scan_error_${Date.now()}`,
         timestamp: Date.now(),
         image_uri: imageUri,
-        summary: `[Chế độ dự phòng] Không thể kết nối OpenAI API (${err.message || 'Lỗi mạng/Key'}). Vui lòng kiểm tra lại API Key OpenAI trong cài đặt.`,
+        is_valid_food_label: true,
+        summary: `[Chế độ dự phòng] Không thể kết nối OpenAI API (${err.message || 'Lỗi mạng/Key'}). Vui lòng kiểm tra lại kết nối mạng.`,
       };
     }
   }

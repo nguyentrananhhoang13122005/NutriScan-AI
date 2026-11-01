@@ -27,6 +27,8 @@ export interface NutritionResult {
   id: string;
   timestamp: number;
   image_uri?: string;
+  barcode?: string;
+  is_valid_food_label?: boolean;
   product_name: string;
   brand_name?: string;
   category: string;
