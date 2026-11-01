@@ -19,7 +19,8 @@
       "package": "com.nutriscan.ai",
       "versionCode": 2,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
@@ -45,6 +46,12 @@
     ],
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "c9eb763b-a3f8-46db-b27e-5f595f9feadf"
+      }
+    },
+    "owner": "hoangnguyen13122005"
   }
 }
