@@ -12,10 +12,12 @@ export interface AIServiceConfig {
   openaiKey?: string;
 }
 
+const DEFAULT_PROXY_URL = 'https://nutriscan-ai-nutriscan-proxy.vercel.app/api/analyze';
+
 class AIService {
   private config: AIServiceConfig = {
     provider: ((process.env.EXPO_PUBLIC_AI_PROVIDER as string)?.trim() as AIProvider) || 'OPENAI',
-    proxyUrl: (process.env.EXPO_PUBLIC_API_PROXY_URL || '').trim(),
+    proxyUrl: (process.env.EXPO_PUBLIC_API_PROXY_URL || DEFAULT_PROXY_URL).trim(),
     geminiKey: (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '').trim(),
     openaiKey: (process.env.EXPO_PUBLIC_OPENAI_API_KEY || '').trim(),
   };
@@ -33,7 +35,7 @@ class AIService {
       ]);
 
       const envProvider = (process.env.EXPO_PUBLIC_AI_PROVIDER as string)?.trim() as AIProvider | undefined;
-      const envProxyUrl = (process.env.EXPO_PUBLIC_API_PROXY_URL || '').trim();
+      const envProxyUrl = (process.env.EXPO_PUBLIC_API_PROXY_URL || DEFAULT_PROXY_URL).trim();
       const envOpenAI = (process.env.EXPO_PUBLIC_OPENAI_API_KEY || '').trim();
       const envGemini = (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '').trim();
 

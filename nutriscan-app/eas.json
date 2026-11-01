@@ -6,12 +6,20 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_PROXY_URL": "https://nutriscan-ai-nutriscan-proxy.vercel.app/api/analyze",
+        "EXPO_PUBLIC_AI_PROVIDER": "OPENAI"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_PROXY_URL": "https://nutriscan-ai-nutriscan-proxy.vercel.app/api/analyze",
+        "EXPO_PUBLIC_AI_PROVIDER": "OPENAI"
       }
     },
     "apk-release": {
@@ -19,12 +27,20 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_PROXY_URL": "https://nutriscan-ai-nutriscan-proxy.vercel.app/api/analyze",
+        "EXPO_PUBLIC_AI_PROVIDER": "OPENAI"
       }
     },
     "production": {
       "autoIncrement": true,
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_PROXY_URL": "https://nutriscan-ai-nutriscan-proxy.vercel.app/api/analyze",
+        "EXPO_PUBLIC_AI_PROVIDER": "OPENAI"
       }
     }
   },
