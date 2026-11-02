@@ -258,43 +258,13 @@ class AIService {
 
   /**
    * Bộ điều phối thông minh:
-   * - Nếu trong file .env có điền Key trực tiếp (GitHub / Groq / OpenAI / Gemini) -> Ưu tiên chạy Key trong .env để bạn test trên Expo ngay lập tức!
-   * - Nếu .env để trống Key (như khi build APK) -> Tự động gọi qua Vercel Proxy!
+   * - Ưu tiên số 1: Gọi qua máy chủ Vercel Proxy (https://nutriscan-ai-nutriscan-proxy.vercel.app/api/analyze) để quản lý Key tập trung từ xa!
+   * - Dự phòng (Fallback): Nếu máy chủ Proxy gặp sự cố, tự động chuyển sang gọi trực tiếp bằng Key cấu hình sẵn (Groq / OpenAI / Gemini).
    */
   private async executeAICall(promptText: string, base64Image?: string): Promise<any> {
     const errors: string[] = [];
 
-    // 1. Ưu tiên số 1: GROQ_API_KEY trong .env (Qwen 3.8 27B Vision - Siêu tốc 0.2s & Miễn phí)
-    if (this.config.groqKey) {
-      try {
-        return await this.callGroqDirect(promptText, base64Image);
-      } catch (e: any) {
-        console.warn('Lỗi Groq Direct:', e.message);
-        errors.push(e.message);
-      }
-    }
-
-    // 2. Nếu có OPENAI_API_KEY trong .env
-    if (this.config.openaiKey) {
-      try {
-        return await this.callOpenAIDirect(promptText, base64Image);
-      } catch (e: any) {
-        console.warn('Lỗi OpenAI Direct:', e.message);
-        errors.push(e.message);
-      }
-    }
-
-    // 3. Nếu có GEMINI_API_KEY trong .env
-    if (this.config.geminiKey) {
-      try {
-        return await this.callGeminiDirect(promptText, base64Image);
-      } catch (e: any) {
-        console.warn('Lỗi Gemini Direct:', e.message);
-        errors.push(e.message);
-      }
-    }
-
-    // 4. Gọi qua Vercel Proxy (Dành cho bản APK hoặc khi không điền key ở local .env)
+    // 1. Ưu tiên số 1: Gọi qua máy chủ Vercel Proxy
     if (this.config.proxyUrl) {
       try {
         return await this.callSecureProxy(promptText, base64Image);
@@ -304,7 +274,37 @@ class AIService {
       }
     }
 
-    throw new Error(errors.join(' | ') || 'Chưa cấu hình API Key trong .env hoặc trên Vercel Proxy');
+    // 2. Dự phòng số 1: GROQ_API_KEY (Qwen 3.8 27B Vision - Siêu tốc & Miễn phí)
+    if (this.config.groqKey) {
+      try {
+        return await this.callGroqDirect(promptText, base64Image);
+      } catch (e: any) {
+        console.warn('Lỗi Groq Direct:', e.message);
+        errors.push(e.message);
+      }
+    }
+
+    // 3. Dự phòng số 2: OPENAI_API_KEY
+    if (this.config.openaiKey) {
+      try {
+        return await this.callOpenAIDirect(promptText, base64Image);
+      } catch (e: any) {
+        console.warn('Lỗi OpenAI Direct:', e.message);
+        errors.push(e.message);
+      }
+    }
+
+    // 4. Dự phòng số 3: GEMINI_API_KEY
+    if (this.config.geminiKey) {
+      try {
+        return await this.callGeminiDirect(promptText, base64Image);
+      } catch (e: any) {
+        console.warn('Lỗi Gemini Direct:', e.message);
+        errors.push(e.message);
+      }
+    }
+
+    throw new Error(errors.join(' | ') || 'Chưa cấu hình API Key trên Vercel Proxy hoặc trong .env');
   }
 
   /**
