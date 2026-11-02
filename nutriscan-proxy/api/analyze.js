@@ -66,7 +66,7 @@ async function callGitHubModels(githubToken, promptText, base64Image) {
 }
 
 /**
- * 2. GROQ CLOUD (Meta Llama-4 Maverick 17B 128E & Scout 17B Vision - Siêu tốc 0.8s)
+ * 2. GROQ CLOUD (Qwen 3.8 27B Vision - Siêu tốc 0.2s)
  */
 async function callGroq(groqKey, promptText, base64Image) {
   const userContent = [{ type: 'text', text: promptText }];
@@ -78,11 +78,8 @@ async function callGroq(groqKey, promptText, base64Image) {
   }
 
   const models = base64Image
-    ? [
-        'meta-llama/llama-4-maverick-17b-128e-instruct',
-        'meta-llama/llama-4-scout-17b-16e-instruct',
-      ]
-    : ['llama-3.3-70b-versatile'];
+    ? ['qwen/qwen3.8-27b']
+    : ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'];
 
   let lastErr = '';
   for (const model of models) {

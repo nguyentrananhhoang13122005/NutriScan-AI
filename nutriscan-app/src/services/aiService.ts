@@ -3,23 +3,27 @@ import { MOCK_SCANS } from '../constants/mockData';
 import { storageService } from './storageService';
 import * as ImageManipulator from 'expo-image-manipulator';
 
-export type AIProvider = 'MOCK' | 'GEMINI' | 'OPENAI';
+export type AIProvider = 'MOCK' | 'GITHUB' | 'GROQ' | 'OPENAI' | 'GEMINI';
 
 export interface AIServiceConfig {
   provider: AIProvider;
   proxyUrl?: string;
-  geminiKey?: string;
+  githubToken?: string;
+  groqKey?: string;
   openaiKey?: string;
+  geminiKey?: string;
 }
 
 const DEFAULT_PROXY_URL = 'https://nutriscan-ai-nutriscan-proxy.vercel.app/api/analyze';
 
 class AIService {
   private config: AIServiceConfig = {
-    provider: ((process.env.EXPO_PUBLIC_AI_PROVIDER as string)?.trim() as AIProvider) || 'OPENAI',
+    provider: ((process.env.EXPO_PUBLIC_AI_PROVIDER as string)?.trim() as AIProvider) || 'GROQ',
     proxyUrl: (process.env.EXPO_PUBLIC_API_PROXY_URL || DEFAULT_PROXY_URL).trim(),
-    geminiKey: (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '').trim(),
+    githubToken: (process.env.EXPO_PUBLIC_GITHUB_TOKEN || '').trim(),
+    groqKey: (process.env.EXPO_PUBLIC_GROQ_API_KEY || '').trim(),
     openaiKey: (process.env.EXPO_PUBLIC_OPENAI_API_KEY || '').trim(),
+    geminiKey: (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '').trim(),
   };
 
   constructor() {
@@ -36,35 +40,21 @@ class AIService {
 
       const envProvider = (process.env.EXPO_PUBLIC_AI_PROVIDER as string)?.trim() as AIProvider | undefined;
       const envProxyUrl = (process.env.EXPO_PUBLIC_API_PROXY_URL || DEFAULT_PROXY_URL).trim();
+      const envGithub = (process.env.EXPO_PUBLIC_GITHUB_TOKEN || '').trim();
+      const envGroq = (process.env.EXPO_PUBLIC_GROQ_API_KEY || '').trim();
       const envOpenAI = (process.env.EXPO_PUBLIC_OPENAI_API_KEY || '').trim();
       const envGemini = (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '').trim();
 
-      const validSavedProvider =
-        savedProvider === 'OPENAI' || savedProvider === 'GEMINI'
-          ? (savedProvider as AIProvider)
-          : undefined;
-
       this.config = {
-        provider: envProvider || validSavedProvider || 'OPENAI',
+        provider: envProvider || (savedProvider as AIProvider) || 'GROQ',
         proxyUrl: envProxyUrl,
-        geminiKey: envGemini || geminiKey || '',
+        githubToken: envGithub,
+        groqKey: envGroq,
         openaiKey: envOpenAI || openaiKey || '',
+        geminiKey: envGemini || geminiKey || '',
       };
     } catch (e) {
       console.warn('Lỗi tải cấu hình AI:', e);
-    }
-  }
-
-  public setConfig(newConfig: Partial<AIServiceConfig>) {
-    this.config = { ...this.config, ...newConfig };
-    if (newConfig.provider) {
-      storageService.saveAIProvider(newConfig.provider);
-    }
-    if (newConfig.geminiKey !== undefined) {
-      storageService.saveApiKey('GEMINI', newConfig.geminiKey);
-    }
-    if (newConfig.openaiKey !== undefined) {
-      storageService.saveApiKey('OPENAI', newConfig.openaiKey);
     }
   }
 
@@ -83,7 +73,163 @@ class AIService {
   }
 
   /**
-   * Gọi qua Backend Proxy Bảo Mật (Dành cho bản Release APK không chứa API Key trong máy)
+   * 1. Gọi trực tiếp GitHub Models (OpenAI GPT-4o-mini MIỄN PHÍ qua GitHub Token)
+   */
+  private async callGitHubModelsDirect(promptText: string, base64Image?: string): Promise<any> {
+    const userContent: any[] = [{ type: 'text', text: promptText }];
+    if (base64Image) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+      });
+    }
+
+    const res = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.config.githubToken}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: userContent }],
+        temperature: 0.1,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`GitHub Models (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('GitHub Models trả về rỗng');
+    return JSON.parse(content);
+  }
+
+  /**
+   * 2. Gọi trực tiếp Groq Cloud (Qwen 3.8 27B Vision MIỄN PHÍ - Siêu tốc 0.2s)
+   */
+  private async callGroqDirect(promptText: string, base64Image?: string): Promise<any> {
+    const userContent: any[] = [{ type: 'text', text: promptText }];
+    if (base64Image) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+      });
+    }
+
+    const models = base64Image
+      ? ['qwen/qwen3.8-27b']
+      : ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b'];
+
+    let lastErr = '';
+    for (const model of models) {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.groqKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: userContent }],
+          temperature: 0.1,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (content) return JSON.parse(content);
+      } else {
+        lastErr = await res.text();
+      }
+    }
+
+    throw new Error(`Groq Error: ${lastErr}`);
+  }
+
+  /**
+   * 3. Gọi trực tiếp OpenAI Platform
+   */
+  private async callOpenAIDirect(promptText: string, base64Image?: string): Promise<any> {
+    const userContent: any[] = [{ type: 'text', text: promptText }];
+    if (base64Image) {
+      userContent.push({
+        type: 'image_url',
+        image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+      });
+    }
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.config.openaiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: userContent }],
+        temperature: 0.1,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`OpenAI (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('OpenAI trả về rỗng');
+    return JSON.parse(content);
+  }
+
+  /**
+   * 4. Gọi trực tiếp Google Gemini
+   */
+  private async callGeminiDirect(promptText: string, base64Image?: string): Promise<any> {
+    const parts: any[] = [{ text: promptText }];
+    if (base64Image) {
+      parts.push({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: base64Image,
+        },
+      });
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.config.geminiKey}`;
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Gemini (${res.status}): ${errText}`);
+    }
+
+    const data = await res.json();
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawText) throw new Error('Gemini trả về rỗng');
+    return JSON.parse(rawText);
+  }
+
+  /**
+   * 5. Gọi qua Backend Proxy trên Vercel (Khi đóng gói APK không chứa key)
    */
   private async callSecureProxy(promptText: string, base64Image?: string): Promise<any> {
     if (!this.config.proxyUrl) {
@@ -104,10 +250,61 @@ class AIService {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Proxy trả về mã lỗi ${response.status}: ${errText}`);
+      throw new Error(`Proxy (${response.status}): ${errText}`);
     }
 
     return response.json();
+  }
+
+  /**
+   * Bộ điều phối thông minh:
+   * - Nếu trong file .env có điền Key trực tiếp (GitHub / Groq / OpenAI / Gemini) -> Ưu tiên chạy Key trong .env để bạn test trên Expo ngay lập tức!
+   * - Nếu .env để trống Key (như khi build APK) -> Tự động gọi qua Vercel Proxy!
+   */
+  private async executeAICall(promptText: string, base64Image?: string): Promise<any> {
+    const errors: string[] = [];
+
+    // 1. Ưu tiên số 1: GROQ_API_KEY trong .env (Qwen 3.8 27B Vision - Siêu tốc 0.2s & Miễn phí)
+    if (this.config.groqKey) {
+      try {
+        return await this.callGroqDirect(promptText, base64Image);
+      } catch (e: any) {
+        console.warn('Lỗi Groq Direct:', e.message);
+        errors.push(e.message);
+      }
+    }
+
+    // 2. Nếu có OPENAI_API_KEY trong .env
+    if (this.config.openaiKey) {
+      try {
+        return await this.callOpenAIDirect(promptText, base64Image);
+      } catch (e: any) {
+        console.warn('Lỗi OpenAI Direct:', e.message);
+        errors.push(e.message);
+      }
+    }
+
+    // 3. Nếu có GEMINI_API_KEY trong .env
+    if (this.config.geminiKey) {
+      try {
+        return await this.callGeminiDirect(promptText, base64Image);
+      } catch (e: any) {
+        console.warn('Lỗi Gemini Direct:', e.message);
+        errors.push(e.message);
+      }
+    }
+
+    // 4. Gọi qua Vercel Proxy (Dành cho bản APK hoặc khi không điền key ở local .env)
+    if (this.config.proxyUrl) {
+      try {
+        return await this.callSecureProxy(promptText, base64Image);
+      } catch (e: any) {
+        console.warn('Lỗi Vercel Proxy:', e.message);
+        errors.push(e.message);
+      }
+    }
+
+    throw new Error(errors.join(' | ') || 'Chưa cấu hình API Key trong .env hoặc trên Vercel Proxy');
   }
 
   /**
@@ -119,7 +316,6 @@ class AIService {
   ): Promise<NutritionResult | null> {
     const cleanCode = barcode.trim();
 
-    // Bước 1: Kiểm tra bộ nhớ đệm trên thiết bị
     const cached = await storageService.findScanByBarcode(cleanCode);
     if (cached) {
       return {
@@ -128,7 +324,6 @@ class AIService {
       };
     }
 
-    // Bước 2: Tra cứu trên OpenFoodFacts API
     try {
       const offRes = await fetch(
         `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(cleanCode)}.json`
@@ -208,61 +403,20 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
   "actionable_advice": "Lời khuyên khẩu phần thiết thực"
 }`;
 
-      // Ưu tiên 1: Gọi qua Secure Proxy (nếu đã cấu hình cho APK)
-      if (this.config.proxyUrl) {
-        try {
-          const parsed = await this.callSecureProxy(promptText);
-          return this.mapParsedResult(parsed, {
-            idPrefix: `barcode_${cleanCode}`,
-            barcode: cleanCode,
-            imageUri,
-            fallbackName: productName,
-            fallbackBrand: brandName,
-            fallbackNova: novaGroup,
-          });
-        } catch (proxyErr) {
-          console.warn('Lỗi gọi Proxy cho barcode:', proxyErr);
-        }
+      try {
+        const parsed = await this.executeAICall(promptText);
+        return this.mapParsedResult(parsed, {
+          idPrefix: `barcode_${cleanCode}`,
+          barcode: cleanCode,
+          imageUri,
+          fallbackName: productName,
+          fallbackBrand: brandName,
+          fallbackNova: novaGroup,
+        });
+      } catch (aiErr) {
+        console.warn('Dùng dữ liệu OpenFoodFacts trực tiếp do AI lỗi:', aiErr);
       }
 
-      // Ưu tiên 2: Gọi trực tiếp OpenAI nếu có Key
-      if (this.config.provider === 'OPENAI' && this.config.openaiKey) {
-        try {
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.config.openaiKey}`,
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              response_format: { type: 'json_object' },
-              messages: [{ role: 'user', content: promptText }],
-              temperature: 0.1,
-            }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            const content = data?.choices?.[0]?.message?.content;
-            if (content) {
-              const parsed = JSON.parse(content);
-              return this.mapParsedResult(parsed, {
-                idPrefix: `barcode_${cleanCode}`,
-                barcode: cleanCode,
-                imageUri,
-                fallbackName: productName,
-                fallbackBrand: brandName,
-                fallbackNova: novaGroup,
-              });
-            }
-          }
-        } catch (aiErr) {
-          console.warn('Lỗi gọi AI cho barcode, dùng dữ liệu OpenFoodFacts trực tiếp:', aiErr);
-        }
-      }
-
-      // Fallback trực tiếp từ dữ liệu OpenFoodFacts
       const baseScore = novaGroup === 1 ? 88 : novaGroup === 2 ? 75 : novaGroup === 3 ? 62 : 38;
       const trafficLight = baseScore >= 75 ? 'GREEN' : baseScore >= 50 ? 'YELLOW' : 'RED';
 
@@ -417,199 +571,23 @@ HÃY PHÂN TÍCH VÀ TRẢ VỀ DUY NHẤT MỘT ĐỐI TƯỢNG JSON VỚI CÁC
     imageUri: string,
     profile: UserProfile
   ): Promise<NutritionResult> {
-    // Ưu tiên 1: Nếu đã cấu hình Backend Proxy bảo mật (chế độ APK Release)
-    if (this.config.proxyUrl) {
-      try {
-        const base64Data = await this.extractBase64(imageUri);
-        const promptText = this.buildVisionPrompt(profile);
-        const parsed = await this.callSecureProxy(promptText, base64Data);
-        return this.mapParsedResult(parsed, {
-          idPrefix: 'proxy',
-          imageUri,
-        });
-      } catch (proxyErr: any) {
-        console.warn('Lỗi gọi Proxy, thử fallback sang gọi trực tiếp:', proxyErr.message);
-        if (!this.config.openaiKey && !this.config.geminiKey) {
-          return {
-            ...MOCK_SCANS[0],
-            id: `scan_error_${Date.now()}`,
-            timestamp: Date.now(),
-            image_uri: imageUri,
-            is_valid_food_label: true,
-            summary: `[Chế độ dự phòng] Không thể kết nối Server Proxy (${proxyErr.message}).`,
-          };
-        }
-      }
-    }
-
-    // Ưu tiên 2: Nếu dùng MOCK hoặc chưa có API key
-    if (
-      this.config.provider === 'MOCK' ||
-      (this.config.provider === 'GEMINI' && !this.config.geminiKey) ||
-      (this.config.provider === 'OPENAI' && !this.config.openaiKey)
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 1800));
-
-      const randomIndex = Math.floor(Math.random() * MOCK_SCANS.length);
-      const baseScan = MOCK_SCANS[randomIndex];
-
-      const personalizedResult: NutritionResult = {
-        ...baseScan,
-        id: `scan_${Date.now()}`,
-        timestamp: Date.now(),
-        image_uri: imageUri,
-        is_valid_food_label: true,
-      };
-
-      const matchedAllergens = personalizedResult.allergens_detected.filter((a) =>
-        profile.allergies.some((userAllergy) =>
-          a.toLowerCase().includes(userAllergy.toLowerCase())
-        )
-      );
-
-      if (matchedAllergens.length > 0) {
-        personalizedResult.child_warning = {
-          ...personalizedResult.child_warning,
-          danger_reason: `⚠️ CẢNH BÁO DỊ ỨNG CHO ${profile.name.toUpperCase()}: Phát hiện có chứa ${matchedAllergens.join(', ')}!`,
-        };
-      }
-
-      return personalizedResult;
-    }
-
-    // Ưu tiên 3: Gọi Google Gemini 2.0 Flash Vision
-    if (this.config.provider === 'GEMINI' && this.config.geminiKey) {
-      return this.callGeminiAPI(imageUri, profile);
-    }
-
-    // Ưu tiên 4: Gọi OpenAI GPT-4o Mini Vision
-    if (this.config.provider === 'OPENAI' && this.config.openaiKey) {
-      return this.callOpenAIAPI(imageUri, profile);
-    }
-
-    return MOCK_SCANS[0];
-  }
-
-  /**
-   * GỌI GOOGLE GEMINI 2.0 FLASH VISION API THẬT
-   */
-  private async callGeminiAPI(imageUri: string, profile: UserProfile): Promise<NutritionResult> {
     try {
       const base64Data = await this.extractBase64(imageUri);
       const promptText = this.buildVisionPrompt(profile);
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.config.geminiKey}`;
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: promptText },
-                {
-                  inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: base64Data,
-                  },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Gemini API Error:', errorText);
-        throw new Error(`Gemini trả về lỗi HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!rawText) {
-        throw new Error('Gemini không trả về nội dung hợp lệ');
-      }
-
-      const parsed = JSON.parse(rawText);
+      const parsed = await this.executeAICall(promptText, base64Data);
       return this.mapParsedResult(parsed, {
-        idPrefix: 'gemini',
+        idPrefix: 'ai',
         imageUri,
       });
     } catch (err: any) {
-      console.warn('Lỗi gọi Gemini Vision API, chuyển sang mock data dự phòng:', err.message);
+      console.warn('Lỗi gọi AI, chuyển sang mock data dự phòng:', err.message);
       return {
         ...MOCK_SCANS[0],
         id: `scan_error_${Date.now()}`,
         timestamp: Date.now(),
         image_uri: imageUri,
         is_valid_food_label: true,
-        summary: `[Chế độ dự phòng] Không thể kết nối Gemini API (${err.message || 'Lỗi mạng/Key'}). Vui lòng kiểm tra lại kết nối mạng.`,
-      };
-    }
-  }
-
-  /**
-   * GỌI OPENAI GPT-4O-MINI VISION API
-   */
-  private async callOpenAIAPI(imageUri: string, profile: UserProfile): Promise<NutritionResult> {
-    try {
-      const base64Data = await this.extractBase64(imageUri);
-      const promptText = this.buildVisionPrompt(profile);
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: promptText },
-                {
-                  type: 'image_url',
-                  image_url: { url: `data:image/jpeg;base64,${base64Data}` },
-                },
-              ],
-            },
-          ],
-          temperature: 0.1,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('OpenAI API Error:', errorText);
-        throw new Error(`OpenAI trả về mã lỗi HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const content = data?.choices?.[0]?.message?.content;
-      if (!content) throw new Error('OpenAI không trả về nội dung');
-
-      const parsed = JSON.parse(content);
-      return this.mapParsedResult(parsed, {
-        idPrefix: 'openai',
-        imageUri,
-      });
-    } catch (err: any) {
-      console.warn('Lỗi gọi OpenAI API, chuyển sang mock data dự phòng:', err.message);
-      return {
-        ...MOCK_SCANS[1],
-        id: `scan_error_${Date.now()}`,
-        timestamp: Date.now(),
-        image_uri: imageUri,
-        is_valid_food_label: true,
-        summary: `[Chế độ dự phòng] Không thể kết nối OpenAI API (${err.message || 'Lỗi mạng/Key'}). Vui lòng kiểm tra lại kết nối mạng.`,
+        summary: `[Chế độ dự phòng] Chưa kết nối được AI (${err.message}). Hãy kiểm tra khóa trong file .env hoặc trên Vercel.`,
       };
     }
   }
