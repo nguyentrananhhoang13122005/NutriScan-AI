@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, AppState } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as Updates from 'expo-updates';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useAppStore } from './src/store/useAppStore';
 import { ScannerScreen } from './src/screens/ScannerScreen';
@@ -22,6 +23,29 @@ export default function App() {
 
   useEffect(() => {
     loadInitialData();
+
+    // Kiểm tra và tự động tải bản cập nhật OTA (EAS Update) khi mở ứng dụng
+    const checkAndApplyOTAUpdate = async () => {
+      if (__DEV__ || !Updates.isEnabled) return;
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch (e) {
+        console.log('OTA check skipped:', e);
+      }
+    };
+
+    checkAndApplyOTAUpdate();
+
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        checkAndApplyOTAUpdate();
+      }
+    });
+    return () => sub.remove();
   }, []);
 
   return (
