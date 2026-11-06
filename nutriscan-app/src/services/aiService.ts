@@ -63,10 +63,11 @@ class AIService {
   }
 
   private getTargetDescription(profile: UserProfile): string {
-    const bmiEval = evaluateAsianBMI(profile.height_cm, profile.weight_kg, profile.gender);
+    const age = profile.age_years || profile.child_age_years;
+    const bmiEval = evaluateAsianBMI(profile.height_cm, profile.weight_kg, profile.gender, age);
     const genderStr = profile.gender === 'FEMALE' ? 'Nữ' : 'Nam';
     const bmiStr = bmiEval
-      ? ` | ${profile.name} (${genderStr}, ${profile.height_cm}cm, ${profile.weight_kg}kg, BMI Châu Á: ${bmiEval.bmi} - ${bmiEval.category})`
+      ? ` | ${profile.name} (${genderStr}, ${age || 22} tuổi, ${profile.height_cm}cm, ${profile.weight_kg}kg, BMI Châu Á: ${bmiEval.bmi} - ${bmiEval.category})`
       : ` | ${profile.name}`;
 
     if (profile.target_group === 'CHILD') {

@@ -49,6 +49,7 @@ export interface UserProfile {
   id: string;
   name: string;
   gender?: 'MALE' | 'FEMALE';
+  age_years?: number;
   height_cm?: number;
   weight_kg?: number;
   target_group: 'CHILD' | 'PREGNANT' | 'ADULT';
@@ -62,95 +63,148 @@ export interface BMIEvaluation {
   bmi: number;
   category: 'Thiếu cân' | 'Bình thường' | 'Thừa cân' | 'Béo phì độ I' | 'Béo phì độ II';
   color: string;
+  minNormalBmi: number;
+  maxNormalBmi: number;
+  overweightBmi: number;
   idealMinKg: number;
   idealMaxKg: number;
+  dailyKcal?: number;
   weightDiffKg: number; // >0 nghĩa là cần giảm, <0 nghĩa là cần tăng, 0 là chuẩn
+  scaleLabel: string;
   diagnosis: string;
   scanAdvice: string;
 }
 
 /**
  * Tính toán BMI hoàn toàn Offline trên thiết bị (0 token, 0 request API)
- * Áp dụng chuẩn BMI theo Thang đo Châu Á (IDI & WPRO):
- * - < 18.5: Thiếu cân
- * - 18.5 - 22.9: Bình thường
- * - 23.0 - 24.9: Thừa cân (Tiền béo phì)
- * - 25.0 - 29.9: Béo phì độ I
- * - >= 30.0: Béo phì độ II
+ * - Người lớn (>= 18 tuổi): Áp dụng Thang đo Châu Á (Chuẩn: 18.5 - 22.9, Thừa cân: 23.0 - 24.9, Béo phì: >= 25.0)
+ * - Trẻ em (< 18 tuổi): Tự động điều chỉnh ngưỡng BMI chuẩn theo độ tuổi đang phát triển của trẻ
  */
 export function evaluateAsianBMI(
   heightCm?: number,
   weightKg?: number,
-  gender: 'MALE' | 'FEMALE' = 'MALE'
+  gender: 'MALE' | 'FEMALE' = 'MALE',
+  ageYears?: number
 ): BMIEvaluation | null {
   if (!heightCm || !weightKg || heightCm < 40 || heightCm > 250 || weightKg < 3 || weightKg > 300) {
     return null;
   }
 
+  const age = ageYears && ageYears > 0 ? ageYears : 25;
   const heightM = heightCm / 100;
   const rawBmi = weightKg / (heightM * heightM);
   const bmi = Math.round(rawBmi * 10) / 10;
 
-  const idealMinKg = Math.round(18.5 * heightM * heightM * 10) / 10;
-  const idealMaxKg = Math.round(22.9 * heightM * heightM * 10) / 10;
+  // Ngưỡng BMI tự động điều chỉnh theo độ tuổi (Trẻ em vs Người lớn Châu Á)
+  let minNormalBmi = 18.5;
+  let maxNormalBmi = 22.9;
+  let overweightBmi = 25.0;
+  let scaleLabel = 'Thang đo Châu Á (Người lớn)';
+
+  if (age < 6) {
+    minNormalBmi = 14.0;
+    maxNormalBmi = 17.2;
+    overweightBmi = 18.5;
+    scaleLabel = `Thang đo Châu Á (Trẻ nhỏ ${age} tuổi)`;
+  } else if (age < 12) {
+    minNormalBmi = 14.5;
+    maxNormalBmi = 18.8;
+    overweightBmi = 20.5;
+    scaleLabel = `Thang đo Châu Á (Trẻ em ${age} tuổi)`;
+  } else if (age < 18) {
+    minNormalBmi = 16.5;
+    maxNormalBmi = 21.5;
+    overweightBmi = 23.5;
+    scaleLabel = `Thang đo Châu Á (Thiếu niên ${age} tuổi)`;
+  }
+
+  const idealMinKg = Math.round(minNormalBmi * heightM * heightM * 10) / 10;
+  const idealMaxKg = Math.round(maxNormalBmi * heightM * heightM * 10) / 10;
+
+  // Ước tính năng lượng khuyến nghị mỗi ngày (Mifflin-St Jeor + hệ số vận động nhẹ 1.35)
+  const bmr =
+    gender === 'FEMALE'
+      ? 10 * weightKg + 6.25 * heightCm - 5 * age - 161
+      : 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
+  const dailyKcal = Math.max(800, Math.round(bmr * 1.35));
 
   let weightDiffKg = 0;
   if (weightKg < idealMinKg) {
-    weightDiffKg = Math.round((weightKg - idealMinKg) * 10) / 10; // âm: cần tăng
+    weightDiffKg = Math.round((weightKg - idealMinKg) * 10) / 10;
   } else if (weightKg > idealMaxKg) {
-    weightDiffKg = Math.round((weightKg - idealMaxKg) * 10) / 10; // dương: cần giảm
+    weightDiffKg = Math.round((weightKg - idealMaxKg) * 10) / 10;
   }
 
   const genderLabel = gender === 'FEMALE' ? 'Nữ' : 'Nam';
 
-  if (bmi < 18.5) {
+  if (bmi < minNormalBmi) {
     return {
       bmi,
       category: 'Thiếu cân',
       color: '#38BDF8',
+      minNormalBmi,
+      maxNormalBmi,
+      overweightBmi,
       idealMinKg,
       idealMaxKg,
+      dailyKcal,
       weightDiffKg,
-      diagnosis: `Thể trạng ${genderLabel} đang thiếu cân (cần tăng thêm ít nhất ${Math.abs(weightDiffKg)}kg để đạt chuẩn Châu Á). Ưu tiên thực phẩm giàu đạm, sữa, ngũ cốc nguyên hạt; tránh đồ ăn vặt nhiều calo rỗng.`,
-      scanAdvice: 'Ưu tiên sản phẩm NOVA 1-2 giàu dinh dưỡng thật, hạn chế phụ gia ức chế hấp thu.',
+      scaleLabel,
+      diagnosis: `Thể trạng ${genderLabel} (${age} tuổi) đang thiếu cân (cần tăng thêm khoảng ${Math.abs(weightDiffKg)}kg để đạt ngưỡng chuẩn ${idealMinKg}–${idealMaxKg}kg). Nhu cầu năng lượng ước tính ~${dailyKcal} kcal/ngày.`,
+      scanAdvice: 'Ưu tiên sản phẩm NOVA 1-2 giàu đạm và dưỡng chất thật, tránh calo rỗng.',
     };
   }
 
-  if (bmi < 23.0) {
+  if (bmi <= maxNormalBmi) {
     return {
       bmi,
       category: 'Bình thường',
       color: '#10B981',
+      minNormalBmi,
+      maxNormalBmi,
+      overweightBmi,
       idealMinKg,
       idealMaxKg,
+      dailyKcal,
       weightDiffKg: 0,
-      diagnosis: `Thể trạng ${genderLabel} đạt mức Chuẩn khỏe mạnh theo thang đo Châu Á (${idealMinKg}kg – ${idealMaxKg}kg). Hãy duy trì chế độ ăn cân bằng và hạn chế thực phẩm siêu chế biến.`,
-      scanAdvice: 'Duy trì lựa chọn các sản phẩm nhãn Xanh (Điểm ≥ 75) để giữ vóc dáng.',
+      scaleLabel,
+      diagnosis: `Thể trạng ${genderLabel} (${age} tuổi) đạt mức Chuẩn khỏe mạnh (${idealMinKg}kg – ${idealMaxKg}kg). Nhu cầu duy trì ước tính ~${dailyKcal} kcal/ngày.`,
+      scanAdvice: 'Duy trì lựa chọn các sản phẩm nhãn Xanh (Điểm ≥ 75) để giữ thể trạng.',
     };
   }
 
-  if (bmi < 25.0) {
+  if (bmi < overweightBmi) {
     return {
       bmi,
       category: 'Thừa cân',
       color: '#F59E0B',
+      minNormalBmi,
+      maxNormalBmi,
+      overweightBmi,
       idealMinKg,
       idealMaxKg,
+      dailyKcal,
       weightDiffKg,
-      diagnosis: `Thể trạng ${genderLabel} đang ở ngưỡng Thừa cân theo thang đo Châu Á (dư khoảng ${weightDiffKg}kg). Cần kiểm soát đường ẩn (HFCS, Maltodextrin) và đồ chiên dầu cọ.`,
+      scaleLabel,
+      diagnosis: `Thể trạng ${genderLabel} (${age} tuổi) đang ở ngưỡng Thừa cân (dư khoảng ${weightDiffKg}kg so với mức chuẩn ${idealMinKg}–${idealMaxKg}kg). Cần kiểm soát đường ẩn và dầu chiên công nghiệp.`,
       scanAdvice: 'Cảnh giác cao với đồ uống có đường, bánh kẹo và thực phẩm nhóm NOVA 4.',
     };
   }
 
-  if (bmi < 30.0) {
+  if (bmi < overweightBmi + 5) {
     return {
       bmi,
       category: 'Béo phì độ I',
       color: '#EF4444',
+      minNormalBmi,
+      maxNormalBmi,
+      overweightBmi,
       idealMinKg,
       idealMaxKg,
+      dailyKcal,
       weightDiffKg,
-      diagnosis: `Thể trạng ${genderLabel} thuộc nhóm Béo phì độ I theo thang đo Châu Á (vượt mức chuẩn ${weightDiffKg}kg). Cần cắt giảm nghiêm ngặt đường tinh luyện, chất béo bão hòa và muối natri cao.`,
+      scaleLabel,
+      diagnosis: `Thể trạng ${genderLabel} (${age} tuổi) thuộc nhóm Béo phì độ I (vượt mức chuẩn ${weightDiffKg}kg). Cần cắt giảm nghiêm ngặt đường tinh luyện, chất béo bão hòa và muối natri cao.`,
       scanAdvice: 'Nghiêm khắc loại bỏ sản phẩm có Đường ẩn, Dầu cọ tinh luyện và Trans-fat.',
     };
   }
@@ -159,10 +213,15 @@ export function evaluateAsianBMI(
     bmi,
     category: 'Béo phì độ II',
     color: '#EF4444',
+    minNormalBmi,
+    maxNormalBmi,
+    overweightBmi,
     idealMinKg,
     idealMaxKg,
+    dailyKcal,
     weightDiffKg,
-    diagnosis: `Thể trạng ${genderLabel} thuộc nhóm Béo phì độ II theo thang đo Châu Á (vượt mức chuẩn ${weightDiffKg}kg). Khuyến nghị ưu tiên tuyệt đối thực phẩm tự nhiên nguyên bản (NOVA 1).`,
+    scaleLabel,
+    diagnosis: `Thể trạng ${genderLabel} (${age} tuổi) thuộc nhóm Béo phì độ II (vượt mức chuẩn ${weightDiffKg}kg). Khuyến nghị ưu tiên tuyệt đối thực phẩm tự nhiên nguyên bản (NOVA 1).`,
     scanAdvice: 'Chỉ nên sử dụng sản phẩm tự nhiên không đường bổ sung, không chất béo công nghiệp.',
   };
 }

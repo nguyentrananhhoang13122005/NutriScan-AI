@@ -61,6 +61,9 @@ export const ProfileScreen: React.FC = () => {
   } = useAppStore();
 
   const [customName, setCustomName] = useState(activeProfile?.name || '');
+  const [ageStr, setAgeStr] = useState(
+    String(activeProfile?.age_years || activeProfile?.child_age_years || 22)
+  );
   const [heightStr, setHeightStr] = useState(
     activeProfile?.height_cm ? String(activeProfile.height_cm) : '170'
   );
@@ -71,16 +74,38 @@ export const ProfileScreen: React.FC = () => {
   React.useEffect(() => {
     if (activeProfile) {
       setCustomName(activeProfile.name || '');
+      const defaultAge =
+        activeProfile.age_years ||
+        activeProfile.child_age_years ||
+        (activeProfile.target_group === 'CHILD' ? 2 : 22);
+      setAgeStr(String(defaultAge));
       setHeightStr(activeProfile.height_cm ? String(activeProfile.height_cm) : '');
       setWeightStr(activeProfile.weight_kg ? String(activeProfile.weight_kg) : '');
     }
-  }, [activeProfile?.id, activeProfile?.name, activeProfile?.height_cm, activeProfile?.weight_kg]);
+  }, [
+    activeProfile?.id,
+    activeProfile?.name,
+    activeProfile?.age_years,
+    activeProfile?.child_age_years,
+    activeProfile?.height_cm,
+    activeProfile?.weight_kg,
+  ]);
 
   if (!activeProfile) return null;
 
+  const parsedAge =
+    parseFloat(ageStr.replace(',', '.')) ||
+    activeProfile.age_years ||
+    activeProfile.child_age_years ||
+    (activeProfile.target_group === 'CHILD' ? 2 : 22);
   const parsedHeight = parseFloat(heightStr.replace(',', '.')) || activeProfile.height_cm;
   const parsedWeight = parseFloat(weightStr.replace(',', '.')) || activeProfile.weight_kg;
-  const bmiEval = evaluateAsianBMI(parsedHeight, parsedWeight, activeProfile.gender || 'MALE');
+  const bmiEval = evaluateAsianBMI(
+    parsedHeight,
+    parsedWeight,
+    activeProfile.gender || 'MALE',
+    parsedAge
+  );
 
   const handleSelectGender = (gender: 'MALE' | 'FEMALE') => {
     updateProfile({
@@ -90,6 +115,7 @@ export const ProfileScreen: React.FC = () => {
   };
 
   const handleSaveBodyMetrics = () => {
+    const a = parseFloat(ageStr.replace(',', '.'));
     const h = parseFloat(heightStr.replace(',', '.'));
     const w = parseFloat(weightStr.replace(',', '.'));
     const trimmedName = customName.trim() || activeProfile.name;
@@ -97,6 +123,11 @@ export const ProfileScreen: React.FC = () => {
     updateProfile({
       ...activeProfile,
       name: trimmedName,
+      age_years: !isNaN(a) && a > 0 && a < 120 ? a : activeProfile.age_years,
+      child_age_years:
+        activeProfile.target_group === 'CHILD' && !isNaN(a) && a > 0
+          ? a
+          : activeProfile.child_age_years,
       height_cm: !isNaN(h) && h > 30 && h < 250 ? h : activeProfile.height_cm,
       weight_kg: !isNaN(w) && w > 2 && w < 300 ? w : activeProfile.weight_kg,
     });
@@ -476,10 +507,27 @@ export const ProfileScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Hàng 3: Chiều cao (cm) & Cân nặng (kg) */}
+          {/* Hàng 3: Tuổi, Chiều cao (cm) & Cân nặng (kg) */}
           <View style={styles.metricsRow}>
             <View style={styles.metricCol}>
-              <Text style={styles.bmiLabel}>Chiều cao (cm)</Text>
+              <Text style={styles.bmiLabel}>Độ tuổi</Text>
+              <View style={styles.metricInputBox}>
+                <TextInput
+                  style={styles.metricInput}
+                  value={ageStr}
+                  onChangeText={setAgeStr}
+                  onBlur={handleSaveBodyMetrics}
+                  keyboardType="numeric"
+                  placeholder="22"
+                  placeholderTextColor="#64748B"
+                  returnKeyType="done"
+                />
+                <Text style={styles.metricUnit}>tuổi</Text>
+              </View>
+            </View>
+
+            <View style={styles.metricCol}>
+              <Text style={styles.bmiLabel}>Chiều cao</Text>
               <View style={styles.metricInputBox}>
                 <TextInput
                   style={styles.metricInput}
@@ -496,7 +544,7 @@ export const ProfileScreen: React.FC = () => {
             </View>
 
             <View style={styles.metricCol}>
-              <Text style={styles.bmiLabel}>Cân nặng (kg)</Text>
+              <Text style={styles.bmiLabel}>Cân nặng</Text>
               <View style={styles.metricInputBox}>
                 <TextInput
                   style={styles.metricInput}
@@ -523,7 +571,9 @@ export const ProfileScreen: React.FC = () => {
             <View style={styles.bmiResultBox}>
               <View style={styles.bmiScoreHeader}>
                 <View>
-                  <Text style={styles.bmiScoreLabel}>CHỈ SỐ BMI (THANG ĐO CHÂU Á)</Text>
+                  <Text style={styles.bmiScoreLabel}>
+                    {bmiEval.scaleLabel.toUpperCase()}
+                  </Text>
                   <View style={styles.bmiNumberRow}>
                     <Text style={[styles.bmiBigNumber, { color: bmiEval.color }]}>
                       {bmiEval.bmi}
@@ -549,18 +599,18 @@ export const ProfileScreen: React.FC = () => {
                 </View>
               </View>
 
-              {/* Thước đo 4 mức Châu Á */}
+              {/* Thước đo 4 mức Châu Á (Tự điều chỉnh theo Tuổi) */}
               <View style={styles.bmiScaleBar}>
-                <View style={[styles.bmiScaleSeg, { backgroundColor: '#38BDF8', opacity: bmiEval.bmi < 18.5 ? 1 : 0.3 }]} />
-                <View style={[styles.bmiScaleSeg, { backgroundColor: '#10B981', opacity: bmiEval.bmi >= 18.5 && bmiEval.bmi < 23 ? 1 : 0.3 }]} />
-                <View style={[styles.bmiScaleSeg, { backgroundColor: '#F59E0B', opacity: bmiEval.bmi >= 23 && bmiEval.bmi < 25 ? 1 : 0.3 }]} />
-                <View style={[styles.bmiScaleSeg, { backgroundColor: '#EF4444', opacity: bmiEval.bmi >= 25 ? 1 : 0.3 }]} />
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#38BDF8', opacity: bmiEval.bmi < bmiEval.minNormalBmi ? 1 : 0.3 }]} />
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#10B981', opacity: bmiEval.bmi >= bmiEval.minNormalBmi && bmiEval.bmi <= bmiEval.maxNormalBmi ? 1 : 0.3 }]} />
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#F59E0B', opacity: bmiEval.bmi > bmiEval.maxNormalBmi && bmiEval.bmi < bmiEval.overweightBmi ? 1 : 0.3 }]} />
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#EF4444', opacity: bmiEval.bmi >= bmiEval.overweightBmi ? 1 : 0.3 }]} />
               </View>
               <View style={styles.bmiScaleLabels}>
-                <Text style={styles.bmiScaleText}>&lt;18.5 Gầy</Text>
-                <Text style={styles.bmiScaleText}>18.5–22.9 Chuẩn</Text>
-                <Text style={styles.bmiScaleText}>23–24.9 Thừa</Text>
-                <Text style={styles.bmiScaleText}>≥25 Béo phì</Text>
+                <Text style={styles.bmiScaleText}>&lt;{bmiEval.minNormalBmi} Gầy</Text>
+                <Text style={styles.bmiScaleText}>{bmiEval.minNormalBmi}–{bmiEval.maxNormalBmi} Chuẩn</Text>
+                <Text style={styles.bmiScaleText}>&lt;{bmiEval.overweightBmi} Thừa</Text>
+                <Text style={styles.bmiScaleText}>≥{bmiEval.overweightBmi} Béo phì</Text>
               </View>
 
               {/* Chẩn đoán & Lời khuyên */}
@@ -754,13 +804,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
   },
   sectionTitle: {
     color: '#F8FAFC',
     fontSize: 14,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: 6,
+    flexShrink: 1,
   },
   sectionBadge: {
     color: '#94A3B8',
@@ -1109,10 +1162,11 @@ const styles = StyleSheet.create({
   },
   metricsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   metricCol: {
     flex: 1,
+    minWidth: 0,
     gap: 6,
   },
   metricInputBox: {
@@ -1122,20 +1176,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#334155',
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     height: 42,
   },
   metricInput: {
     flex: 1,
+    minWidth: 0,
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     padding: 0,
   },
   metricUnit: {
     color: '#64748B',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
+    marginLeft: 3,
   },
   saveMetricsBtn: {
     flexDirection: 'row',
@@ -1163,6 +1219,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   bmiScoreLabel: {
     color: '#94A3B8',

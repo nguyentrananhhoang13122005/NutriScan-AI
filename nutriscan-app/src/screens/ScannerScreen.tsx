@@ -9,7 +9,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useAppStore } from '../store/useAppStore';
@@ -22,22 +22,25 @@ import {
   User,
   Sparkles,
   ShieldAlert,
-  Barcode,
 } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
-const RETICLE_WIDTH = width * 0.85;
+const RETICLE_WIDTH = Math.min(width * 0.86, 340);
 const RETICLE_HEIGHT = RETICLE_WIDTH * 0.75;
-const BARCODE_HEIGHT = RETICLE_WIDTH * 0.48;
 
 export const ScannerScreen: React.FC = () => {
-  const { activeProfile, startAnalyze, startBarcodeScan, setActiveTab } = useAppStore();
+  const { activeProfile, startAnalyze, setActiveTab } = useAppStore();
   const [permission, requestPermission] = useCameraPermissions();
   const [flashOn, setFlashOn] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
-  const [scanMode, setScanMode] = useState<'LABEL_AI' | 'BARCODE'>('LABEL_AI');
-  const [barcodeLocked, setBarcodeLocked] = useState(false);
   const cameraRef = useRef<any>(null);
+
+  const bmiEval = evaluateAsianBMI(
+    activeProfile?.height_cm,
+    activeProfile?.weight_kg,
+    activeProfile?.gender,
+    activeProfile?.age_years || activeProfile?.child_age_years
+  );
 
   // Mở thư viện chọn ảnh
   const pickImage = async () => {
@@ -54,28 +57,6 @@ export const ScannerScreen: React.FC = () => {
     } catch (e) {
       console.warn('Lỗi chọn ảnh:', e);
       Alert.alert('Thông báo', 'Không thể mở thư viện ảnh');
-    }
-  };
-
-  // Xử lý khi quét trúng mã vạch ở chế độ Barcode
-  const handleBarcodeScanned = async (scanningResult: BarcodeScanningResult) => {
-    if (barcodeLocked || scanMode !== 'BARCODE') return;
-    const code = scanningResult?.data;
-    if (!code) return;
-
-    setBarcodeLocked(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    const status = await startBarcodeScan(code);
-    if (status === 'NOT_FOUND') {
-      setScanMode('LABEL_AI');
-      setBarcodeLocked(false);
-      Alert.alert(
-        'Chuyển sang Chụp Nhãn AI',
-        `Mã vạch (${code}) chưa có trong bộ nhớ đệm. Đã chuyển sang chế độ Chụp Bảng Thành Phần — bạn hãy bấm nút chụp để AI đọc trực tiếp bao bì nhé!`
-      );
-    } else {
-      setBarcodeLocked(false);
     }
   };
 
@@ -100,7 +81,6 @@ export const ScannerScreen: React.FC = () => {
         }
       }
 
-      // Fallback nếu không có ref camera (ví dụ chạy giả lập trên web)
       const demoUri = 'https://images.unsplash.com/photo-1599490659213-e2b9527bd087?w=800';
       startAnalyze(demoUri);
     } catch (err) {
@@ -111,7 +91,6 @@ export const ScannerScreen: React.FC = () => {
     }
   };
 
-  // Màn hình xin quyền Camera nếu chưa được cấp
   if (!permission) {
     return (
       <View style={styles.centerBox}>
@@ -143,174 +122,84 @@ export const ScannerScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* 📷 CAMERA THẬT CHẠY TRỰC TIẾP TOÀN MÀN HÌNH */}
+      {/* CAMERA THẬT TOÀN MÀN HÌNH */}
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing="back"
         enableTorch={flashOn}
-        barcodeScannerSettings={
-          scanMode === 'BARCODE'
-            ? {
-                barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128'],
-              }
-            : undefined
-        }
-        onBarcodeScanned={scanMode === 'BARCODE' && !barcodeLocked ? handleBarcodeScanned : undefined}
       />
 
       {/* LỚP PHỦ GIAO DIỆN (OVERLAY) */}
       <View style={styles.overlay}>
-        {/* Top Area: Profile Badge, Flash & Mode Switcher */}
-        <View>
-          <View style={styles.topBar}>
-            <TouchableOpacity
-              style={styles.profileBadge}
-              onPress={() => setActiveTab('profile')}
-              activeOpacity={0.8}
-            >
-              <View style={styles.profileIconCircle}>
-                <User size={14} color="#10B981" />
-              </View>
-              <View>
-                <Text style={styles.profileSub}>
-                  {(() => {
-                    const bmi = evaluateAsianBMI(
-                      activeProfile?.height_cm,
-                      activeProfile?.weight_kg,
-                      activeProfile?.gender
-                    );
-                    return bmi ? `BMI Châu Á: ${bmi.bmi} (${bmi.category})` : 'Đang quét cho';
-                  })()}
-                </Text>
-                <Text style={styles.profileName} numberOfLines={1}>
-                  {activeProfile ? activeProfile.name : 'Chưa chọn'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.flashButton}
-              onPress={() => setFlashOn(!flashOn)}
-            >
-              {flashOn ? (
-                <Zap size={20} color="#FBBF24" />
-              ) : (
-                <ZapOff size={20} color="#FFFFFF" />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Thanh chuyển đổi chế độ 2 trong 1: Chụp Nhãn AI vs Quét Mã Vạch */}
-          <View style={styles.modeSwitchContainer}>
-            <View style={styles.modeSwitchPill}>
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  scanMode === 'LABEL_AI' && styles.modeBtnActive,
-                ]}
-                onPress={() => {
-                  setScanMode('LABEL_AI');
-                  setBarcodeLocked(false);
-                }}
-              >
-                <CameraIcon
-                  size={14}
-                  color={scanMode === 'LABEL_AI' ? '#FFFFFF' : '#94A3B8'}
-                />
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    scanMode === 'LABEL_AI' && styles.modeBtnTextActive,
-                  ]}
-                >
-                  Chụp Thành Phần (AI)
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.modeBtn,
-                  scanMode === 'BARCODE' && styles.modeBtnActive,
-                ]}
-                onPress={() => {
-                  setScanMode('BARCODE');
-                  setBarcodeLocked(false);
-                }}
-              >
-                <Barcode
-                  size={14}
-                  color={scanMode === 'BARCODE' ? '#FFFFFF' : '#94A3B8'}
-                />
-                <Text
-                  style={[
-                    styles.modeBtnText,
-                    scanMode === 'BARCODE' && styles.modeBtnTextActive,
-                  ]}
-                >
-                  Quét Mã Vạch
-                </Text>
-              </TouchableOpacity>
+        {/* Top Area: Profile Badge & Flash */}
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            style={styles.profileBadge}
+            onPress={() => setActiveTab('profile')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.profileIconCircle}>
+              <User size={14} color="#10B981" />
             </View>
-          </View>
+            <View style={styles.profileTextCol}>
+              <Text style={styles.profileSub} numberOfLines={1}>
+                {bmiEval
+                  ? `BMI Châu Á: ${bmiEval.bmi} (${bmiEval.category})`
+                  : 'Đang quét cho'}
+              </Text>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {activeProfile ? activeProfile.name : 'Chưa chọn'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.flashButton}
+            onPress={() => setFlashOn(!flashOn)}
+          >
+            {flashOn ? (
+              <Zap size={20} color="#FBBF24" />
+            ) : (
+              <ZapOff size={20} color="#FFFFFF" />
+            )}
+          </TouchableOpacity>
         </View>
 
-        {/* Khung ngắm Reticle trong suốt nhìn thẳng ra camera thật */}
+        {/* Khung ngắm Reticle */}
         <View style={styles.viewfinderContainer}>
-          <View
-            style={[
-              styles.reticle,
-              scanMode === 'BARCODE' && { height: BARCODE_HEIGHT },
-            ]}
-          >
-            {/* 4 góc viền xanh */}
+          <View style={styles.reticle}>
             <View style={[styles.corner, styles.cornerTL]} />
             <View style={[styles.corner, styles.cornerTR]} />
             <View style={[styles.corner, styles.cornerBL]} />
             <View style={[styles.corner, styles.cornerBR]} />
 
-            {scanMode === 'BARCODE' ? (
-              <View style={styles.barcodeGuideWrap}>
-                <View style={styles.laserLine} />
-                <View style={styles.guideBox}>
-                  <Barcode size={22} color="#10B981" />
-                  <Text style={styles.guideTitle}>Đưa Mã Vạch Vào Giữa Khung</Text>
-                  <Text style={styles.guideSubtitle}>
-                    Tự động nhận diện EAN-13 / UPC trong 0.5 giây
-                  </Text>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.guideBox}>
-                <CameraIcon size={24} color="#38BDF8" />
-                <Text style={styles.guideTitle}>Bảng Thành Phần Thực Phẩm</Text>
-                <Text style={styles.guideSubtitle}>
-                  Căn chỉnh phần chữ thành phần nằm gọn trong khung
-                </Text>
-              </View>
-            )}
+            <View style={styles.guideBox}>
+              <CameraIcon size={24} color="#38BDF8" />
+              <Text style={styles.guideTitle}>Chụp Bảng Thành Phần</Text>
+              <Text style={styles.guideSubtitle}>
+                Căn chỉnh phần chữ thành phần nằm gọn trong khung
+              </Text>
+            </View>
           </View>
 
-          {/* Lời khuyên khi chụp */}
           <View style={styles.scanTipPill}>
             <Sparkles size={14} color="#10B981" />
-            <Text style={styles.scanTipText}>
-              {scanMode === 'LABEL_AI'
-                ? 'Chụp rõ chữ để AI đọc phụ gia & cảnh báo chính xác nhất'
-                : 'Nếu mã vạch mới chưa có dữ liệu, App sẽ tự chuyển sang chụp AI'}
+            <Text style={styles.scanTipText} numberOfLines={2}>
+              Chụp rõ chữ để AI đọc phụ gia & đối chiếu chỉ số BMI chính xác nhất
             </Text>
           </View>
         </View>
 
         {/* Nút Điều khiển dưới cùng */}
         <View style={styles.bottomControls}>
-          {/* Nút thư viện ảnh */}
           <TouchableOpacity style={styles.iconBtn} onPress={pickImage}>
             <GalleryIcon size={24} color="#FFFFFF" />
-            <Text style={styles.iconBtnLabel}>Chọn ảnh</Text>
+            <Text style={styles.iconBtnLabel} numberOfLines={1}>
+              Chọn ảnh
+            </Text>
           </TouchableOpacity>
 
-          {/* Nút Bấm Chụp Camera Thật */}
           <TouchableOpacity
             style={styles.shutterOuter}
             activeOpacity={0.7}
@@ -324,24 +213,14 @@ export const ScannerScreen: React.FC = () => {
             )}
           </TouchableOpacity>
 
-          {/* Nút đổi nhanh chế độ */}
           <TouchableOpacity
             style={styles.iconBtn}
-            onPress={() =>
-              setScanMode(scanMode === 'LABEL_AI' ? 'BARCODE' : 'LABEL_AI')
-            }
+            onPress={() => setActiveTab('profile')}
           >
-            {scanMode === 'LABEL_AI' ? (
-              <>
-                <Barcode size={24} color="#FFFFFF" />
-                <Text style={styles.iconBtnLabel}>Mã vạch</Text>
-              </>
-            ) : (
-              <>
-                <CameraIcon size={24} color="#FFFFFF" />
-                <Text style={styles.iconBtnLabel}>Chụp chữ</Text>
-              </>
-            )}
+            <User size={24} color="#FFFFFF" />
+            <Text style={styles.iconBtnLabel} numberOfLines={1}>
+              Hồ sơ BMI
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -356,7 +235,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    backgroundColor: 'rgba(0, 0, 0, 0.32)',
     justifyContent: 'space-between',
   },
   centerBox: {
@@ -419,15 +298,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 8,
+    gap: 12,
     zIndex: 10,
   },
   profileBadge: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 24,
@@ -436,16 +318,22 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   profileIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: 'rgba(16, 185, 129, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
+  },
+  profileTextCol: {
+    flex: 1,
+    minWidth: 0,
   },
   profileSub: {
     fontSize: 10,
-    color: '#CBD5E1',
+    color: '#34D399',
+    fontWeight: '600',
   },
   profileName: {
     fontSize: 13,
@@ -456,43 +344,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  modeSwitchContainer: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginTop: 4,
-  },
-  modeSwitchPill: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    borderRadius: 24,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  modeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  modeBtnActive: {
-    backgroundColor: '#10B981',
-  },
-  modeBtnText: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  modeBtnTextActive: {
-    color: '#FFFFFF',
+    flexShrink: 0,
   },
   viewfinderContainer: {
     flex: 1,
@@ -510,6 +367,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    padding: 16,
   },
   corner: {
     position: 'absolute',
@@ -545,65 +403,59 @@ const styles = StyleSheet.create({
     borderRightWidth: 4,
     borderBottomRightRadius: 18,
   },
-  barcodeGuideWrap: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  laserLine: {
-    position: 'absolute',
-    width: '88%',
-    height: 2,
-    backgroundColor: '#EF4444',
-    opacity: 0.85,
-  },
   guideBox: {
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     gap: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingVertical: 10,
-    borderRadius: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    paddingVertical: 12,
+    borderRadius: 14,
+    maxWidth: '92%',
   },
   guideTitle: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 15,
+    textAlign: 'center',
   },
   guideSubtitle: {
     color: '#E2E8F0',
     fontSize: 11,
     textAlign: 'center',
+    lineHeight: 15,
   },
   scanTipPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    paddingHorizontal: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 20,
-    marginTop: 18,
+    borderRadius: 18,
+    marginTop: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
+    maxWidth: '94%',
   },
   scanTipText: {
+    flex: 1,
     color: '#E2E8F0',
     fontSize: 12,
     fontWeight: '600',
+    lineHeight: 16,
   },
   bottomControls: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 20,
     paddingTop: 16,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
   },
   iconBtn: {
     alignItems: 'center',
     gap: 4,
-    width: 75,
+    width: 80,
   },
   iconBtnLabel: {
     color: '#CBD5E1',
@@ -611,19 +463,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   shutterOuter: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 74,
+    height: 74,
+    borderRadius: 37,
     borderWidth: 4,
     borderColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 3,
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
   },
   shutterInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#FFFFFF',
   },
 });

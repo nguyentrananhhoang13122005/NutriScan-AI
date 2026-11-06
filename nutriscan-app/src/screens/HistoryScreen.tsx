@@ -96,6 +96,13 @@ export const HistoryScreen: React.FC = () => {
 
     const isSelectedForCompare = compareItems.some((c) => c.id === item.id);
 
+    const statusText =
+      item.traffic_light === 'GREEN'
+        ? '🟢 Tốt / An toàn'
+        : item.traffic_light === 'YELLOW'
+        ? '🟡 Cần lưu ý'
+        : '🔴 Hạn chế dùng';
+
     return (
       <TouchableOpacity
         style={[styles.card, isSelectedForCompare && styles.cardCompareSelected]}
@@ -107,17 +114,28 @@ export const HistoryScreen: React.FC = () => {
             <Image source={{ uri: item.image_uri }} style={styles.itemThumb} />
           ) : null}
 
-          <TrafficLightBadge trafficLight={item.traffic_light} score={item.health_score} size="sm" />
+          <TrafficLightBadge
+            trafficLight={item.traffic_light}
+            score={item.health_score}
+            size="sm"
+            showLabel={false}
+          />
 
           <View style={styles.cardInfo}>
             <Text style={styles.productName} numberOfLines={1}>
               {item.product_name}
             </Text>
-            {item.brand_name ? <Text style={styles.brandName}>{item.brand_name}</Text> : null}
+            {item.brand_name ? (
+              <Text style={styles.brandName} numberOfLines={1}>
+                {item.brand_name}
+              </Text>
+            ) : null}
 
             <View style={styles.dateRow}>
               <Calendar size={11} color="#64748B" />
-              <Text style={styles.dateText}>{dateFormatted}</Text>
+              <Text style={styles.dateText} numberOfLines={1}>
+                {dateFormatted} • {statusText}
+              </Text>
             </View>
           </View>
 
@@ -136,11 +154,15 @@ export const HistoryScreen: React.FC = () => {
         <View style={styles.cardFooterRow}>
           {!item.child_warning.is_safe_for_kids ? (
             <View style={styles.childHazardBadge}>
-              <Text style={styles.childHazardText}>⚠️ Hạn chế cho trẻ nhỏ</Text>
+              <Text style={styles.childHazardText} numberOfLines={1}>
+                ⚠️ Hạn chế cho trẻ nhỏ
+              </Text>
             </View>
           ) : (
             <View style={styles.childSafeBadge}>
-              <Text style={styles.childSafeText}>✅ An toàn cho bé</Text>
+              <Text style={styles.childSafeText} numberOfLines={1}>
+                ✅ An toàn cho bé
+              </Text>
             </View>
           )}
 
@@ -175,11 +197,13 @@ export const HistoryScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Lịch Sử & Thống Kê</Text>
-          <Text style={styles.headerSubtitle}>
+        <View style={styles.headerTextCol}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            Lịch Sử & Thống Kê
+          </Text>
+          <Text style={styles.headerSubtitle} numberOfLines={2}>
             {history.length > 0
-              ? `Đã lưu ${history.length} sản phẩm • Chọn 2 món để đặt lên bàn cân`
+              ? `Đã lưu ${history.length} sản phẩm • Chọn 2 món để so sánh`
               : 'Chưa có sản phẩm nào'}
           </Text>
         </View>
@@ -367,20 +391,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 10,
+    gap: 10,
+  },
+  headerTextCol: {
+    flex: 1,
   },
   clearAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.35)',
+    flexShrink: 0,
   },
   clearAllBtnText: {
     color: '#EF4444',
@@ -466,6 +495,7 @@ const styles = StyleSheet.create({
   },
   filterRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 16,
     marginVertical: 10,
     gap: 6,
@@ -501,6 +531,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderWidth: 1,
     borderColor: '#334155',
+    overflow: 'hidden',
   },
   cardCompareSelected: {
     borderColor: '#38BDF8',
@@ -509,17 +540,18 @@ const styles = StyleSheet.create({
   cardMain: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
   },
   itemThumb: {
     width: 42,
     height: 42,
     borderRadius: 10,
-    marginRight: 10,
     backgroundColor: '#0F172A',
+    flexShrink: 0,
   },
   cardInfo: {
     flex: 1,
-    marginLeft: 10,
+    minWidth: 0,
   },
   productName: {
     color: '#FFFFFF',

@@ -37,7 +37,8 @@ export const ResultScreen: React.FC = () => {
   const bmiEval = evaluateAsianBMI(
     activeProfile?.height_cm,
     activeProfile?.weight_kg,
-    activeProfile?.gender
+    activeProfile?.gender,
+    activeProfile?.age_years || activeProfile?.child_age_years
   );
 
   // Chẩn đoán độ tương thích của sản phẩm với BMI của người dùng (Tính Offline - 0 tốn token)
@@ -628,12 +629,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   bmiMatchTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    flex: 1,
+    flexShrink: 1,
   },
   bmiMatchTitle: {
     fontSize: 13,

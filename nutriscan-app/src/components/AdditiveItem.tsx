@@ -90,11 +90,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   leftInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    minWidth: 0,
     gap: 10,
   },
   codeBadge: {
@@ -104,6 +106,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     minWidth: 50,
     alignItems: 'center',
+    flexShrink: 0,
   },
   codeText: {
     fontSize: 12,
@@ -111,6 +114,7 @@ const styles = StyleSheet.create({
   },
   nameBlock: {
     flex: 1,
+    minWidth: 0,
   },
   nameText: {
     color: THEME.colors.textPrimary,
@@ -125,7 +129,8 @@ const styles = StyleSheet.create({
   rightInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   riskTag: {
     flexDirection: 'row',

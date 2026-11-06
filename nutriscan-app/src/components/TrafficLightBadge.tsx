@@ -8,11 +8,18 @@ interface Props {
   trafficLight: TrafficLight;
   score: number;
   size?: 'sm' | 'md' | 'lg';
+  layout?: 'row' | 'column';
+  showLabel?: boolean;
 }
 
-export const TrafficLightBadge: React.FC<Props> = ({ trafficLight, score, size = 'md' }) => {
+export const TrafficLightBadge: React.FC<Props> = ({
+  trafficLight,
+  score,
+  size = 'md',
+  layout,
+  showLabel = true,
+}) => {
   let bgColor = THEME.colors.green;
-  let textColor = '#FFFFFF';
   let label = 'TỐT / AN TOÀN';
   let Icon = ShieldCheck;
 
@@ -28,26 +35,67 @@ export const TrafficLightBadge: React.FC<Props> = ({ trafficLight, score, size =
 
   const isLg = size === 'lg';
   const isSm = size === 'sm';
+  const isColumn = layout ? layout === 'column' : isLg;
 
   return (
-    <View style={[styles.container, isLg && styles.containerLg, isSm && styles.containerSm]}>
+    <View
+      style={[
+        styles.container,
+        isColumn && styles.containerColumn,
+        isSm && styles.containerSm,
+      ]}
+    >
       {/* Vòng tròn điểm số */}
-      <View style={[styles.circle, { backgroundColor: bgColor }, isLg && styles.circleLg, isSm && styles.circleSm]}>
-        <Text style={[styles.scoreText, isLg && styles.scoreTextLg, isSm && styles.scoreTextSm]}>
+      <View
+        style={[
+          styles.circle,
+          { backgroundColor: bgColor },
+          isLg && styles.circleLg,
+          isSm && styles.circleSm,
+        ]}
+      >
+        <Text
+          style={[
+            styles.scoreText,
+            isLg && styles.scoreTextLg,
+            isSm && styles.scoreTextSm,
+          ]}
+        >
           {score}
         </Text>
-        <Text style={[styles.maxScore, isLg && styles.maxScoreLg, isSm && styles.maxScoreSm]}>
+        <Text
+          style={[
+            styles.maxScore,
+            isLg && styles.maxScoreLg,
+            isSm && styles.maxScoreSm,
+          ]}
+        >
           /100
         </Text>
       </View>
 
       {/* Nhãn trạng thái */}
-      <View style={[styles.badge, { backgroundColor: `${bgColor}20`, borderColor: bgColor }]}>
-        <Icon size={isSm ? 12 : 14} color={bgColor} />
-        <Text style={[styles.badgeText, { color: bgColor }, isSm && { fontSize: 11 }]}>
-          {label}
-        </Text>
-      </View>
+      {showLabel && (
+        <View
+          style={[
+            styles.badge,
+            isSm && styles.badgeSm,
+            { backgroundColor: `${bgColor}20`, borderColor: bgColor },
+          ]}
+        >
+          <Icon size={isSm ? 11 : 14} color={bgColor} />
+          <Text
+            style={[
+              styles.badgeText,
+              { color: bgColor },
+              isSm && styles.badgeTextSm,
+            ]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -56,14 +104,16 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  containerLg: {
-    flexDirection: 'column',
     gap: 10,
   },
-  containerSm: {
+  containerColumn: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
     gap: 8,
+  },
+  containerSm: {
+    gap: 6,
   },
   circle: {
     width: 52,
@@ -83,9 +133,9 @@ const styles = StyleSheet.create({
     borderRadius: 42,
   },
   circleSm: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   scoreText: {
     color: '#FFFFFF',
@@ -98,8 +148,8 @@ const styles = StyleSheet.create({
     lineHeight: 34,
   },
   scoreTextSm: {
-    fontSize: 14,
-    lineHeight: 16,
+    fontSize: 15,
+    lineHeight: 17,
   },
   maxScore: {
     color: 'rgba(255, 255, 255, 0.75)',
@@ -110,7 +160,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   maxScoreSm: {
-    fontSize: 8,
+    fontSize: 9,
   },
   badge: {
     flexDirection: 'row',
@@ -120,10 +170,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     gap: 5,
+    maxWidth: '100%',
+  },
+  badgeSm: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
   },
   badgeText: {
     fontWeight: '700',
     fontSize: 12,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+  },
+  badgeTextSm: {
+    fontSize: 10,
+    letterSpacing: 0.2,
   },
 });

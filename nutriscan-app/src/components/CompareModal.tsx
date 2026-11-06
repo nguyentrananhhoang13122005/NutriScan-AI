@@ -82,7 +82,11 @@ export const CompareModal: React.FC<Props> = ({ visible, onClose, items }) => {
 
                     {item.image_uri ? (
                       <Image source={{ uri: item.image_uri }} style={styles.thumb} />
-                    ) : null}
+                    ) : (
+                      <View style={styles.thumbPlaceholder}>
+                        <Scale size={20} color="#475569" />
+                      </View>
+                    )}
 
                     <Text style={styles.prodName} numberOfLines={2}>
                       {item.product_name}
@@ -91,11 +95,12 @@ export const CompareModal: React.FC<Props> = ({ visible, onClose, items }) => {
                       {item.brand_name || item.category}
                     </Text>
 
-                    <View style={{ marginVertical: 10 }}>
+                    <View style={{ marginVertical: 10, width: '100%', alignItems: 'center' }}>
                       <TrafficLightBadge
                         trafficLight={item.traffic_light}
                         score={item.health_score}
-                        size="md"
+                        size="sm"
+                        layout="column"
                       />
                     </View>
                   </View>
@@ -330,6 +335,8 @@ const styles = StyleSheet.create({
   },
   colCard: {
     flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
     backgroundColor: '#1E293B',
     borderRadius: 16,
     padding: 12,
@@ -361,17 +368,31 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#0F172A',
   },
+  thumbPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: '#0F172A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
   prodName: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
     minHeight: 36,
+    width: '100%',
   },
   brandName: {
     color: '#94A3B8',
     fontSize: 11,
     marginTop: 2,
+    textAlign: 'center',
+    width: '100%',
   },
   tableCard: {
     backgroundColor: '#1E293B',
