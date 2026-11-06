@@ -1,4 +1,4 @@
-import { NutritionResult, UserProfile } from '../types/nutrition';
+import { NutritionResult, UserProfile, evaluateAsianBMI } from '../types/nutrition';
 import { MOCK_SCANS } from '../constants/mockData';
 import { storageService } from './storageService';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -63,13 +63,19 @@ class AIService {
   }
 
   private getTargetDescription(profile: UserProfile): string {
+    const bmiEval = evaluateAsianBMI(profile.height_cm, profile.weight_kg, profile.gender);
+    const genderStr = profile.gender === 'FEMALE' ? 'Nữ' : 'Nam';
+    const bmiStr = bmiEval
+      ? ` | ${profile.name} (${genderStr}, ${profile.height_cm}cm, ${profile.weight_kg}kg, BMI Châu Á: ${bmiEval.bmi} - ${bmiEval.category})`
+      : ` | ${profile.name}`;
+
     if (profile.target_group === 'CHILD') {
-      return `Trẻ em (${profile.child_age_years || 2} tuổi)`;
+      return `Trẻ em (${profile.child_age_years || 2} tuổi)${bmiStr}`;
     }
     if (profile.target_group === 'PREGNANT') {
-      return 'Mẹ bầu & Cho con bú (Cần tránh phụ gia chống chỉ định thai kỳ, phẩm màu nhân tạo, chất kích thích/cafein)';
+      return `Mẹ bầu & Cho con bú${bmiStr}`;
     }
-    return 'Người lớn';
+    return `Người lớn${bmiStr}`;
   }
 
   /**

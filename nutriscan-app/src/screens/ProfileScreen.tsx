@@ -12,6 +12,7 @@ import {
 import { useAppStore } from '../store/useAppStore';
 import { THEME } from '../constants/theme';
 import { DEFAULT_PROFILES } from '../constants/mockData';
+import { evaluateAsianBMI } from '../types/nutrition';
 import {
   User,
   Baby,
@@ -22,6 +23,7 @@ import {
   Sparkles,
   Trash2,
   RotateCcw,
+  Activity,
 } from 'lucide-react-native';
 
 const ALLERGY_OPTIONS = [
@@ -59,14 +61,74 @@ export const ProfileScreen: React.FC = () => {
   } = useAppStore();
 
   const [customName, setCustomName] = useState(activeProfile?.name || '');
+  const [heightStr, setHeightStr] = useState(
+    activeProfile?.height_cm ? String(activeProfile.height_cm) : '170'
+  );
+  const [weightStr, setWeightStr] = useState(
+    activeProfile?.weight_kg ? String(activeProfile.weight_kg) : '65'
+  );
 
   React.useEffect(() => {
-    if (activeProfile?.name) {
-      setCustomName(activeProfile.name);
+    if (activeProfile) {
+      setCustomName(activeProfile.name || '');
+      setHeightStr(activeProfile.height_cm ? String(activeProfile.height_cm) : '');
+      setWeightStr(activeProfile.weight_kg ? String(activeProfile.weight_kg) : '');
     }
-  }, [activeProfile?.id, activeProfile?.name]);
+  }, [activeProfile?.id, activeProfile?.name, activeProfile?.height_cm, activeProfile?.weight_kg]);
 
   if (!activeProfile) return null;
+
+  const parsedHeight = parseFloat(heightStr.replace(',', '.')) || activeProfile.height_cm;
+  const parsedWeight = parseFloat(weightStr.replace(',', '.')) || activeProfile.weight_kg;
+  const bmiEval = evaluateAsianBMI(parsedHeight, parsedWeight, activeProfile.gender || 'MALE');
+
+  const handleSelectGender = (gender: 'MALE' | 'FEMALE') => {
+    updateProfile({
+      ...activeProfile,
+      gender,
+    });
+  };
+
+  const handleSaveBodyMetrics = () => {
+    const h = parseFloat(heightStr.replace(',', '.'));
+    const w = parseFloat(weightStr.replace(',', '.'));
+    const trimmedName = customName.trim() || activeProfile.name;
+
+    updateProfile({
+      ...activeProfile,
+      name: trimmedName,
+      height_cm: !isNaN(h) && h > 30 && h < 250 ? h : activeProfile.height_cm,
+      weight_kg: !isNaN(w) && w > 2 && w < 300 ? w : activeProfile.weight_kg,
+    });
+  };
+
+  const handleApplyBMIConcerns = () => {
+    if (!bmiEval) return;
+    let recommendedConcerns = [...activeProfile.special_concerns];
+    if (bmiEval.bmi >= 23) {
+      const toAdd = [
+        'Tránh đường ẩn (HFCS, Maltodextrin)',
+        'Tránh dầu cọ tinh luyện',
+        'Hạn chế chất béo chuyển hóa (Trans-fat)',
+      ];
+      toAdd.forEach((c) => {
+        if (!recommendedConcerns.includes(c)) recommendedConcerns.push(c);
+      });
+    } else if (bmiEval.bmi < 18.5) {
+      const toAdd = ['Tránh phẩm màu nhân tạo'];
+      toAdd.forEach((c) => {
+        if (!recommendedConcerns.includes(c)) recommendedConcerns.push(c);
+      });
+    }
+    updateProfile({
+      ...activeProfile,
+      special_concerns: recommendedConcerns,
+    });
+    Alert.alert(
+      'Đã đồng bộ mục tiêu theo BMI',
+      `Hệ thống đã tự động cập nhật bộ lọc dinh dưỡng và tiêu chuẩn chấm điểm AI theo mức BMI ${bmiEval.bmi} (${bmiEval.category}).`
+    );
+  };
 
   // Chuyển đổi đối tượng quét (Trẻ nhỏ / Người lớn / Mẹ bầu)
   const handleSelectTargetGroup = (group: 'CHILD' | 'ADULT' | 'PREGNANT') => {
@@ -340,24 +402,183 @@ export const ProfileScreen: React.FC = () => {
                 );
               })}
             </View>
+          </View>
+        )}
+      </View>
 
-            {/* Đổi tên / biệt danh cho bé */}
-            <View style={styles.nameRow}>
-              <Text style={styles.nameInputLabel}>Tên / Biệt danh bé:</Text>
-              <View style={styles.nameInputWrap}>
+      {/* Mục 1.5: Thông Tin Cá Nhân & Chẩn Đoán BMI (Thang Đo Châu Á) */}
+      <View style={styles.section}>
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionTitle}>Chỉ Số Cơ Thể & BMI (Thang Đo Châu Á)</Text>
+          {bmiEval && (
+            <View style={[styles.bmiMiniPill, { backgroundColor: `${bmiEval.color}22`, borderColor: bmiEval.color }]}>
+              <Text style={[styles.bmiMiniPillText, { color: bmiEval.color }]}>
+                BMI {bmiEval.bmi} • {bmiEval.category}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.bmiCard}>
+          {/* Hàng 1: Họ và Tên */}
+          <View style={styles.bmiInputGroup}>
+            <Text style={styles.bmiLabel}>Họ và tên người dùng:</Text>
+            <View style={styles.nameInputWrap}>
+              <TextInput
+                style={styles.nameInput}
+                value={customName}
+                onChangeText={setCustomName}
+                onBlur={handleSaveBodyMetrics}
+                placeholder="Nhập họ tên của bạn..."
+                placeholderTextColor="#64748B"
+                returnKeyType="done"
+              />
+            </View>
+          </View>
+
+          {/* Hàng 2: Giới tính */}
+          <View style={styles.bmiInputGroup}>
+            <Text style={styles.bmiLabel}>Giới tính:</Text>
+            <View style={styles.genderRow}>
+              <TouchableOpacity
+                style={[
+                  styles.genderBtn,
+                  (activeProfile.gender || 'MALE') === 'MALE' && styles.genderBtnActive,
+                ]}
+                onPress={() => handleSelectGender('MALE')}
+              >
+                <Text
+                  style={[
+                    styles.genderBtnText,
+                    (activeProfile.gender || 'MALE') === 'MALE' && styles.genderBtnTextActive,
+                  ]}
+                >
+                  ♂ Nam
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.genderBtn,
+                  activeProfile.gender === 'FEMALE' && styles.genderBtnActive,
+                ]}
+                onPress={() => handleSelectGender('FEMALE')}
+              >
+                <Text
+                  style={[
+                    styles.genderBtnText,
+                    activeProfile.gender === 'FEMALE' && styles.genderBtnTextActive,
+                  ]}
+                >
+                  ♀ Nữ
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Hàng 3: Chiều cao (cm) & Cân nặng (kg) */}
+          <View style={styles.metricsRow}>
+            <View style={styles.metricCol}>
+              <Text style={styles.bmiLabel}>Chiều cao (cm)</Text>
+              <View style={styles.metricInputBox}>
                 <TextInput
-                  style={styles.nameInput}
-                  value={customName}
-                  onChangeText={setCustomName}
-                  onBlur={handleSaveName}
-                  placeholder="Ví dụ: Bé Bo, Con yêu..."
+                  style={styles.metricInput}
+                  value={heightStr}
+                  onChangeText={setHeightStr}
+                  onBlur={handleSaveBodyMetrics}
+                  keyboardType="numeric"
+                  placeholder="170"
                   placeholderTextColor="#64748B"
                   returnKeyType="done"
                 />
+                <Text style={styles.metricUnit}>cm</Text>
+              </View>
+            </View>
+
+            <View style={styles.metricCol}>
+              <Text style={styles.bmiLabel}>Cân nặng (kg)</Text>
+              <View style={styles.metricInputBox}>
+                <TextInput
+                  style={styles.metricInput}
+                  value={weightStr}
+                  onChangeText={setWeightStr}
+                  onBlur={handleSaveBodyMetrics}
+                  keyboardType="numeric"
+                  placeholder="65"
+                  placeholderTextColor="#64748B"
+                  returnKeyType="done"
+                />
+                <Text style={styles.metricUnit}>kg</Text>
               </View>
             </View>
           </View>
-        )}
+
+          <TouchableOpacity style={styles.saveMetricsBtn} onPress={handleSaveBodyMetrics}>
+            <Activity size={16} color="#FFFFFF" />
+            <Text style={styles.saveMetricsBtnText}>Cập Nhật Chỉ Số & Tính BMI</Text>
+          </TouchableOpacity>
+
+          {/* Kết quả Chẩn đoán BMI theo Thang đo Châu Á */}
+          {bmiEval && (
+            <View style={styles.bmiResultBox}>
+              <View style={styles.bmiScoreHeader}>
+                <View>
+                  <Text style={styles.bmiScoreLabel}>CHỈ SỐ BMI (THANG ĐO CHÂU Á)</Text>
+                  <View style={styles.bmiNumberRow}>
+                    <Text style={[styles.bmiBigNumber, { color: bmiEval.color }]}>
+                      {bmiEval.bmi}
+                    </Text>
+                    <View
+                      style={[
+                        styles.bmiCategoryBadge,
+                        { backgroundColor: `${bmiEval.color}22`, borderColor: bmiEval.color },
+                      ]}
+                    >
+                      <Text style={[styles.bmiCategoryText, { color: bmiEval.color }]}>
+                        {bmiEval.category}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.idealWeightBox}>
+                  <Text style={styles.idealWeightLabel}>Cân nặng chuẩn</Text>
+                  <Text style={styles.idealWeightValue}>
+                    {bmiEval.idealMinKg} – {bmiEval.idealMaxKg} kg
+                  </Text>
+                </View>
+              </View>
+
+              {/* Thước đo 4 mức Châu Á */}
+              <View style={styles.bmiScaleBar}>
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#38BDF8', opacity: bmiEval.bmi < 18.5 ? 1 : 0.3 }]} />
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#10B981', opacity: bmiEval.bmi >= 18.5 && bmiEval.bmi < 23 ? 1 : 0.3 }]} />
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#F59E0B', opacity: bmiEval.bmi >= 23 && bmiEval.bmi < 25 ? 1 : 0.3 }]} />
+                <View style={[styles.bmiScaleSeg, { backgroundColor: '#EF4444', opacity: bmiEval.bmi >= 25 ? 1 : 0.3 }]} />
+              </View>
+              <View style={styles.bmiScaleLabels}>
+                <Text style={styles.bmiScaleText}>&lt;18.5 Gầy</Text>
+                <Text style={styles.bmiScaleText}>18.5–22.9 Chuẩn</Text>
+                <Text style={styles.bmiScaleText}>23–24.9 Thừa</Text>
+                <Text style={styles.bmiScaleText}>≥25 Béo phì</Text>
+              </View>
+
+              {/* Chẩn đoán & Lời khuyên */}
+              <Text style={styles.bmiDiagnosisText}>{bmiEval.diagnosis}</Text>
+
+              <TouchableOpacity
+                style={styles.syncBmiBtn}
+                onPress={handleApplyBMIConcerns}
+                activeOpacity={0.8}
+              >
+                <Sparkles size={14} color="#34D399" />
+                <Text style={styles.syncBmiBtnText}>
+                  Đồng bộ mục tiêu dinh dưỡng & AI quét nhãn theo BMI
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Mục 2: Chế độ Bảo vệ Trẻ em (Khắt khe) */}
@@ -833,5 +1054,201 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 11,
     textAlign: 'center',
+  },
+  bmiMiniPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  bmiMiniPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  bmiCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: 14,
+  },
+  bmiInputGroup: {
+    gap: 6,
+  },
+  bmiLabel: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  genderBtn: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+  },
+  genderBtnActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.18)',
+    borderColor: '#10B981',
+  },
+  genderBtnText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  genderBtnTextActive: {
+    color: '#10B981',
+    fontWeight: '700',
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  metricCol: {
+    flex: 1,
+    gap: 6,
+  },
+  metricInputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingHorizontal: 12,
+    height: 42,
+  },
+  metricInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    padding: 0,
+  },
+  metricUnit: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  saveMetricsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  saveMetricsBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  bmiResultBox: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    gap: 10,
+  },
+  bmiScoreHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bmiScoreLabel: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  bmiNumberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  bmiBigNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  bmiCategoryBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  bmiCategoryText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  idealWeightBox: {
+    alignItems: 'flex-end',
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  idealWeightLabel: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  idealWeightValue: {
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  bmiScaleBar: {
+    flexDirection: 'row',
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    gap: 3,
+  },
+  bmiScaleSeg: {
+    flex: 1,
+    borderRadius: 4,
+  },
+  bmiScaleLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  bmiScaleText: {
+    color: '#64748B',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  bmiDiagnosisText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  syncBmiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.35)',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginTop: 2,
+  },
+  syncBmiBtnText: {
+    color: '#34D399',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

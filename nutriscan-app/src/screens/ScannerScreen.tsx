@@ -13,6 +13,7 @@ import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-ca
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useAppStore } from '../store/useAppStore';
+import { evaluateAsianBMI } from '../types/nutrition';
 import {
   Camera as CameraIcon,
   Image as GalleryIcon,
@@ -172,7 +173,16 @@ export const ScannerScreen: React.FC = () => {
                 <User size={14} color="#10B981" />
               </View>
               <View>
-                <Text style={styles.profileSub}>Đang quét cho</Text>
+                <Text style={styles.profileSub}>
+                  {(() => {
+                    const bmi = evaluateAsianBMI(
+                      activeProfile?.height_cm,
+                      activeProfile?.weight_kg,
+                      activeProfile?.gender
+                    );
+                    return bmi ? `BMI Châu Á: ${bmi.bmi} (${bmi.category})` : 'Đang quét cho';
+                  })()}
+                </Text>
                 <Text style={styles.profileName} numberOfLines={1}>
                   {activeProfile ? activeProfile.name : 'Chưa chọn'}
                 </Text>

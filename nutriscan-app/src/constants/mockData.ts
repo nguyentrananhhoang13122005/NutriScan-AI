@@ -4,6 +4,9 @@ export const DEFAULT_PROFILES: UserProfile[] = [
   {
     id: 'profile_child',
     name: 'Bé yêu (Trẻ nhỏ)',
+    gender: 'MALE',
+    height_cm: 90,
+    weight_kg: 13.5,
     target_group: 'CHILD',
     child_age_years: 2,
     allergies: ['Sữa (Lactose)', 'Đậu phộng'],
@@ -13,6 +16,9 @@ export const DEFAULT_PROFILES: UserProfile[] = [
   {
     id: 'profile_adult',
     name: 'Bản thân (Người lớn)',
+    gender: 'MALE',
+    height_cm: 170,
+    weight_kg: 65,
     target_group: 'ADULT',
     allergies: [],
     special_concerns: ['Tránh đường ẩn (HFCS, Maltodextrin)', 'Giảm muối & Bột ngọt (E621)'],
@@ -21,6 +27,9 @@ export const DEFAULT_PROFILES: UserProfile[] = [
   {
     id: 'profile_pregnant',
     name: 'Mẹ bầu & Cho con bú',
+    gender: 'FEMALE',
+    height_cm: 160,
+    weight_kg: 56,
     target_group: 'PREGNANT',
     allergies: [],
     special_concerns: ['Tránh phẩm màu nhân tạo', 'Tránh dầu cọ tinh luyện'],

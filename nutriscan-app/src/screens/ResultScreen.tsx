@@ -9,6 +9,7 @@ import {
   Image,
 } from 'react-native';
 import { useAppStore } from '../store/useAppStore';
+import { evaluateAsianBMI } from '../types/nutrition';
 import { TrafficLightBadge } from '../components/TrafficLightBadge';
 import { NovaBadge } from '../components/NovaBadge';
 import { AdditiveItem } from '../components/AdditiveItem';
@@ -24,6 +25,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Barcode,
+  Activity,
 } from 'lucide-react-native';
 
 export const ResultScreen: React.FC = () => {
@@ -31,6 +33,64 @@ export const ResultScreen: React.FC = () => {
   const [shareModalVisible, setShareModalVisible] = useState(false);
 
   if (!currentScan) return null;
+
+  const bmiEval = evaluateAsianBMI(
+    activeProfile?.height_cm,
+    activeProfile?.weight_kg,
+    activeProfile?.gender
+  );
+
+  // Chẩn đoán độ tương thích của sản phẩm với BMI của người dùng (Tính Offline - 0 tốn token)
+  const getBmiProductMatch = () => {
+    if (!bmiEval || !activeProfile) return null;
+    const hasSugars = (currentScan.hidden_sugars_detected || []).length > 0;
+    const hasBadFats = (currentScan.bad_fats_detected || []).length > 0;
+    const isUltraProcessed = currentScan.nova_group === 4;
+
+    if (bmiEval.bmi >= 23) {
+      if (hasSugars || hasBadFats || isUltraProcessed || currentScan.health_score < 55) {
+        return {
+          status: 'CẦN HẠN CHẾ THEO BMI',
+          color: '#EF4444',
+          message: `Hồ sơ ${activeProfile.name} có BMI Châu Á ${bmiEval.bmi} (${bmiEval.category}). Sản phẩm này ${
+            hasSugars ? 'chứa đường ẩn, ' : ''
+          }${hasBadFats ? 'chứa chất béo xấu, ' : ''}dễ gây tích mỡ thừa và cản trở mục tiêu đưa cân nặng về mức chuẩn (${bmiEval.idealMinKg}–${bmiEval.idealMaxKg}kg).`,
+        };
+      }
+      return {
+        status: 'PHÙ HỢP KIỂM SOÁT CÂN NẶNG',
+        color: '#10B981',
+        message: `Sản phẩm có chỉ số lành mạnh (${currentScan.health_score}/100), ít đường và chất béo xấu, phù hợp với mục tiêu kiểm soát BMI (${bmiEval.bmi} - ${bmiEval.category}) của ${activeProfile.name}.`,
+      };
+    }
+
+    if (bmiEval.bmi < 18.5) {
+      if (isUltraProcessed && currentScan.health_score < 50) {
+        return {
+          status: 'CALO RỖNG - KHÔNG TỐT ĐỂ TĂNG CÂN',
+          color: '#F59E0B',
+          message: `Hồ sơ ${activeProfile.name} có BMI Châu Á ${bmiEval.bmi} (Thiếu cân). Tuy nhiên sản phẩm này thuộc nhóm siêu chế biến (NOVA 4), nhiều phụ gia nhưng ít dưỡng chất thực để tăng cơ/cân lành mạnh.`,
+        };
+      }
+      return {
+        status: 'HỖ TRỢ BỔ SUNG DINH DƯỠNG',
+        color: '#38BDF8',
+        message: `Phù hợp để bổ sung năng lượng cho thể trạng BMI ${bmiEval.bmi} (${bmiEval.category}) của ${activeProfile.name}. Hãy kết hợp thêm thực phẩm giàu đạm để đạt mức cân chuẩn ${bmiEval.idealMinKg}kg.`,
+      };
+    }
+
+    return {
+      status: currentScan.health_score >= 60 ? 'TƯƠNG THÍCH THỂ TRẠNG CHUẨN' : 'NÊN ĂN LƯỢNG VỪA PHẢI',
+      color: currentScan.health_score >= 60 ? '#10B981' : '#F59E0B',
+      message: `Hồ sơ ${activeProfile.name} đang có BMI Châu Á lý tưởng (${bmiEval.bmi} - Bình thường). ${
+        currentScan.health_score >= 60
+          ? 'Sản phẩm này an toàn để duy trì vóc dáng hiện tại.'
+          : 'Chỉ nên dùng lượng nhỏ để tránh dư thừa calo và phụ gia công nghiệp.'
+      }`,
+    };
+  };
+
+  const bmiMatch = getBmiProductMatch();
 
   // Kiểm tra dị ứng trùng khớp với hồ sơ đang chọn
   const matchedAllergens = (currentScan.allergens_detected || []).filter((detected) =>
@@ -139,6 +199,31 @@ export const ResultScreen: React.FC = () => {
             <NovaBadge group={currentScan.nova_group} />
           </View>
         </View>
+
+        {/* Đánh giá tương thích BMI theo Thang đo Châu Á */}
+        {bmiEval && bmiMatch && (
+          <View style={[styles.bmiMatchCard, { borderColor: `${bmiMatch.color}66` }]}>
+            <View style={styles.bmiMatchHeader}>
+              <View style={styles.bmiMatchTitleRow}>
+                <Activity size={16} color={bmiMatch.color} />
+                <Text style={[styles.bmiMatchTitle, { color: bmiMatch.color }]}>
+                  {bmiMatch.status}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.bmiMatchPill,
+                  { backgroundColor: `${bmiEval.color}22`, borderColor: bmiEval.color },
+                ]}
+              >
+                <Text style={[styles.bmiMatchPillText, { color: bmiEval.color }]}>
+                  BMI Châu Á: {bmiEval.bmi}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.bmiMatchBody}>{bmiMatch.message}</Text>
+          </View>
+        )}
 
         {/* Child & Personal Safety Card */}
         {!currentScan.child_warning.is_safe_for_kids ? (
@@ -530,5 +615,43 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     textAlign: 'center',
     paddingHorizontal: 8,
+  },
+  bmiMatchCard: {
+    backgroundColor: '#1E293B',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    marginBottom: 16,
+    gap: 8,
+  },
+  bmiMatchHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bmiMatchTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  bmiMatchTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  bmiMatchPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  bmiMatchPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  bmiMatchBody: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
