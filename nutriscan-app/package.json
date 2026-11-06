@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit",
     "export:web": "expo export --platform web",
     "build:apk": "npx eas-cli build --platform android --profile preview",
-    "update:ota": "npx eas-cli update --branch preview --message \"OTA Auto Update\" --non-interactive"
+    "update:ota": "npx eas-cli update --branch preview --environment preview --message \"OTA Auto Update\" --non-interactive"
   },
   "private": true
 }
